@@ -1,0 +1,71 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "smtracker"
+version = "3.0.0"
+description = "Python analysis spine for SMTracker: diffusive-state fractions of single-molecule tracks in B. subtilis"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Patrik Brück" }]
+keywords = ["single-molecule", "diffusion", "tracking", "SMT", "SQD", "u-track"]
+
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "pandas>=2.0",
+    "mat73>=0.65",      # v7.3 (HDF5) .mat fallback; scipy.io handles older .mat
+]
+
+[project.optional-dependencies]
+engines = ["saspt"]                     # native Python state inference (Phase 4)
+# RAW ACQUISITIONS, one extra per microscope family. `nd2` (pure Python, freezes cleanly)
+# reads the Nikon/NIS files; the MetaMorph scope writes `.stk`, which is a TIFF variant
+# that `tifffile` already decodes, so it costs nothing. Optional because the analysis
+# spine runs on the CROPPED stacks and only the intensity/movie-prep paths need the raw.
+raw = ["nd2>=0.10", "tifffile"]
+ui = ["napari[pyside6]>=0.5", "tifffile", "matplotlib>=3.7", "openpyxl>=3.1", "markdown-it-py>=3"]  # viewer + inspector canvas, figure export (openpyxl: Source Data workbooks); PySide6 is LGPL (see packaging/build.py)
+figures = ["matplotlib>=3.7"]           # scripts/figure_*.py only, not the spine
+packaging = ["pyinstaller>=6"]          # standalone build; see packaging/build.py
+dev = ["pytest>=7", "ruff", "mypy"]
+
+[tool.setuptools.package-data]
+# The application icon must survive both an editable install and PyInstaller. A
+# missing data file is cosmetic (see smtracker.appicon) but silently shipping a
+# package with no icon is the kind of thing nobody notices until a user asks.
+smtracker = ["resources/*.png", "resources/*.ico"]
+# The mesh editor IS its page — a missing editor.html is not cosmetic, it is the
+# whole window. `_html_path` raises rather than serving an empty response, so a
+# packaging mistake says so at the first click instead of showing a blank browser.
+"smtracker.segmentation" = ["*.html"]
+
+[project.scripts]
+smtracker = "smtracker.app:main"
+
+[project.urls]
+Homepage = "https://github.com/longestgiraffe/smtracker"
+Documentation = "https://longestgiraffe.github.io/smtracker-site/docs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/smtracker"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+# `slow` marks compute-heavy tests (real-data fits, bootstraps, simulations).
+# Everyday fast suite:  pytest -m "not slow"   (target < ~1 min)
+# Everything (CI/release):  pytest
+markers = [
+    "slow: compute-heavy (real-data fits, bootstraps, simulations) — deselect with -m 'not slow'",
+]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_unused_ignores = true
+ignore_missing_imports = true   # scipy/mat73/saspt ship partial or no stubs

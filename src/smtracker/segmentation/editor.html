@@ -1,0 +1,1385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><title>SMTracker — Mesh Editor</title>
+<style>
+:root{--bg:#08090d;--panel:#0f1118;--border:#2e3444;--accent:#00ffb0;--orange:#ff6b35;--text:#e8edf5;--dim:#7a8499;--subtext:#b0bac8}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'JetBrains Mono',Consolas,'DejaVu Sans Mono',monospace;font-size:12px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+header{display:flex;align-items:center;gap:12px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0}
+.logo{font-family:'Syne','Segoe UI',system-ui,sans-serif;font-weight:800;font-size:14px;color:var(--accent)}
+.logo span{color:var(--dim);font-weight:700}
+.hinfo{color:var(--subtext);font-size:11px;flex:1}
+.badge{background:var(--border);border-radius:4px;padding:2px 8px;font-size:10px;color:var(--accent)}
+.main{display:flex;flex:1;overflow:hidden}
+/* left = dataset + navigation (series/cells), right = tools + image view */
+aside{width:215px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
+aside.right{width:250px;border-right:none;border-left:1px solid var(--border);overflow-y:auto}
+.ss{padding:10px 12px;border-bottom:1px solid var(--border)}
+.ss h3{font-family:'Syne','Segoe UI',system-ui,sans-serif;font-size:10px;font-weight:700;color:var(--subtext);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+.btn{display:block;width:100%;padding:6px 10px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;border-radius:4px;font-family:'JetBrains Mono',Consolas,'DejaVu Sans Mono',monospace;font-size:11px;text-align:left;transition:all .15s;margin-bottom:4px}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.primary{border-color:var(--accent);color:var(--accent);background:rgba(0,255,176,.06)}
+.btn.primary:hover{background:var(--accent);color:var(--bg)}
+.btn.atool{background:var(--accent);color:var(--bg);border-color:var(--accent);font-weight:600}
+.btn.danger{border-color:#ff5555;color:#ff5555}.btn.danger:hover{background:#ff5555;color:#fff}
+.btn:disabled{opacity:.25;cursor:not-allowed}
+.img-toggle{display:flex;gap:3px;margin-bottom:4px}
+.img-btn{flex:1;padding:5px 4px;border:1px solid var(--border);background:transparent;color:var(--subtext);cursor:pointer;border-radius:4px;font-family:'JetBrains Mono',Consolas,'DejaVu Sans Mono',monospace;font-size:10px;text-align:center;transition:all .15s}
+.img-btn:hover{border-color:var(--accent);color:var(--text)}
+.img-btn.active{border-color:var(--accent);background:rgba(0,255,176,.14);color:var(--accent);font-weight:600}
+.img-btn.active-sum{border-color:#a78bfa;background:rgba(167,139,250,.14);color:#c4b5fd;font-weight:600}
+.img-btn.active-ov{border-color:#fbbf24;background:rgba(251,191,36,.14);color:#fde68a;font-weight:600}
+.slider-row{display:flex;align-items:center;gap:8px;padding:4px 0}
+.slider-row label{color:var(--subtext);font-size:10px;width:44px;flex-shrink:0}
+.slider-row input[type=range]{flex:1;accent-color:var(--accent)}
+.slider-row .val{color:var(--accent);font-size:11px;width:30px;text-align:right;font-weight:600}
+/* series above cells, stacked, filling the left panel */
+.bottom-lists{display:flex;flex-direction:column;flex:1;overflow:hidden;min-height:0}
+.list-col{display:flex;flex-direction:column;overflow:hidden;flex:1;min-width:0;min-height:60px}
+.list-col:first-child{border-bottom:1px solid var(--border);flex:1.6}
+.list-col-hdr{padding:7px 10px;border-bottom:1px solid var(--border);flex-shrink:0}
+.list-col-hdr h3{font-family:'Syne','Segoe UI',system-ui,sans-serif;font-size:10px;font-weight:700;color:var(--subtext);text-transform:uppercase;letter-spacing:1px}
+.slist{flex:1;overflow-y:auto;padding:4px}
+.si{padding:4px 7px;border-radius:4px;cursor:pointer;color:var(--subtext);font-size:10px;transition:all .1s;border:1px solid transparent;margin-bottom:2px;display:flex;align-items:center;gap:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.si:hover{background:rgba(255,255,255,.06);color:var(--text)}
+.si.active{border-color:var(--accent);color:var(--accent);background:rgba(0,255,176,.07)}
+.si .dot{width:5px;height:5px;border-radius:50%;background:var(--dim);flex-shrink:0}
+.si.active .dot{background:var(--accent)}
+.si.nophase{opacity:.35}
+.clist{flex:1;overflow-y:auto;padding:4px}
+.ci{padding:4px 7px;border-radius:4px;cursor:pointer;font-size:10px;color:var(--subtext);border:1px solid transparent;margin-bottom:2px;transition:all .1s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ci:hover{background:rgba(255,255,255,.06);color:var(--text)}
+.ci.sel{border-color:var(--orange);color:#ffaa88;background:rgba(255,107,53,.08)}
+.sr{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border);font-size:11px}
+.sr:last-child{border:none}.sl{color:var(--subtext)}.sv{color:var(--accent);font-weight:600}
+.cwrap{flex:1;position:relative;overflow:hidden;background:#05060a;display:flex;align-items:center;justify-content:center}
+canvas{image-rendering:pixelated;position:absolute;top:0;left:0}
+#canvasBase{z-index:1}#canvasOverlay{z-index:2;pointer-events:all}
+.mbadge{position:absolute;top:12px;left:50%;transform:translateX(-50%);padding:5px 16px;border-radius:20px;font-size:11px;font-family:'Syne','Segoe UI',system-ui,sans-serif;font-weight:700;letter-spacing:.5px;pointer-events:none;transition:all .2s;z-index:10}
+.msel{background:rgba(0,255,176,.15);border:1px solid var(--accent);color:var(--accent)}
+.mdraw{background:rgba(255,107,53,.15);border:1px solid var(--orange);color:var(--orange)}
+.zctr{position:absolute;bottom:12px;right:12px;display:flex;gap:4px;z-index:10}
+.zb{width:28px;height:28px;border-radius:4px;border:1px solid var(--border);background:rgba(8,9,13,.9);color:var(--text);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
+.zb:hover{border-color:var(--accent);color:var(--accent)}
+#drawHint{position:absolute;bottom:44px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--subtext);pointer-events:none;white-space:nowrap;z-index:10;background:rgba(8,9,13,.7);padding:3px 8px;border-radius:4px}
+.statusbar{padding:5px 16px;background:var(--panel);border-top:1px solid var(--border);font-size:10px;color:var(--subtext);flex-shrink:0;display:flex;gap:16px;align-items:center}
+.sok{color:var(--accent);font-weight:600}.serr{color:#ff5555;font-weight:600}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:100;align-items:center;justify-content:center}
+.modal-bg.show{display:flex}
+.modal{background:var(--panel);border:1px solid var(--border);border-radius:8px;width:500px;max-height:70vh;display:flex;flex-direction:column}
+.mh{padding:12px 16px;border-bottom:1px solid var(--border);font-family:'Syne','Segoe UI',system-ui,sans-serif;font-weight:700;font-size:13px;display:flex;justify-content:space-between;align-items:center;color:var(--text)}
+.mc{background:none;border:none;color:var(--dim);cursor:pointer;font-size:18px}
+.mpath{padding:6px 16px;font-size:10px;color:var(--accent);border-bottom:1px solid var(--border);word-break:break-all}
+.flist{overflow-y:auto;flex:1;padding:6px}
+.fe{padding:6px 10px;border-radius:4px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text)}
+.fe:hover{background:rgba(255,255,255,.06)}.fe .icon{color:var(--accent);width:14px;text-align:center}.fe.file .icon{color:var(--dim)}
+.mfoot{padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;align-items:center}
+.prow{padding:8px 16px;border-bottom:1px solid var(--border);display:flex;gap:6px}
+.pi{flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:4px;font-family:'JetBrains Mono',Consolas,'DejaVu Sans Mono',monospace;font-size:11px}
+.pi:focus{outline:none;border-color:var(--accent)}
+.sb{padding:5px 12px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-size:11px;font-family:'JetBrains Mono',Consolas,'DejaVu Sans Mono',monospace}
+.sb:hover{border-color:var(--accent);color:var(--accent)}.sb.ok{border-color:var(--accent);color:var(--accent)}.sb.ok:hover{background:var(--accent);color:var(--bg)}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+</style>
+<script>
+// THE PER-RUN TOKEN. The server binds loopback, which stops the network and does
+// NOT stop another tab in this browser: any origin may issue requests to
+// 127.0.0.1, and this API reads and WRITES arbitrary paths. The page is served
+// with the token in its URL; every call below carries it.
+const TOKEN = new URLSearchParams(location.search).get('token') || '';
+const START_ROOT = new URLSearchParams(location.search).get('root') || '';
+// The token is appended LAST, by wrapping fetch, rather than written into each of
+// the call sites: a call that builds its own query string then cannot lose it, and
+// a call added later cannot forget it.
+const _origFetch = window.fetch.bind(window);
+window.fetch = (url, opts) => {
+  if (typeof url === 'string' && url.indexOf('/api/') === 0) {
+    url += (url.indexOf('?') === -1 ? '?' : '&') + 'token=' + encodeURIComponent(TOKEN);
+  }
+  return _origFetch(url, opts);
+};
+</script>
+</head>
+<body>
+<header>
+  <div class="logo">mesh<span>editor</span></div>
+  <div class="hinfo" id="headerInfo">No data loaded</div>
+  <div class="badge" id="cellCount">0 cells</div>
+  <div class="badge" id="modBadge" style="display:none;color:#ff6b35;border-color:#ff6b35">UNSAVED</div>
+</header>
+<div class="main">
+<aside>
+  <div class="ss">
+    <h3>Dataset</h3>
+    <button class="btn primary" onclick="openFolderPicker()">📂 Open Folder</button>
+    <button class="btn primary" id="saveBtn" onclick="saveCurrentMat()" disabled>💾 Save Series  (Ctrl+S)</button>
+    <button class="btn" id="saveAllBtn" onclick="saveAllModified()" disabled style="font-size:10px">💾 Save ALL Modified</button>
+  </div>
+
+  <div class="bottom-lists">
+    <div class="list-col">
+      <div class="list-col-hdr"><h3>Series  (← →)</h3></div>
+      <div class="slist" id="seriesList"></div>
+    </div>
+    <div class="list-col">
+      <div class="list-col-hdr"><h3>Cells</h3></div>
+      <div class="clist" id="cellList"></div>
+    </div>
+  </div>
+</aside>
+
+<div class="cwrap" id="canvasWrap">
+  <canvas id="canvasBase"></canvas>
+  <canvas id="canvasOverlay"></canvas>
+  <div class="mbadge msel" id="modeBadge">SELECT</div>
+  <div id="drawHint"></div>
+  <div class="zctr">
+    <button class="zb" onclick="zoom(1.25)">+</button>
+    <button class="zb" onclick="zoom(0.8)">−</button>
+    <button class="zb" onclick="fitView()" title="Fit">⛶</button>
+  </div>
+</div>
+
+<aside class="right">
+  <div class="ss">
+    <h3>Image View</h3>
+    <div class="img-toggle">
+      <button class="img-btn" id="btnPhase" onclick="setView('phase')">Phase</button>
+      <button class="img-btn" id="btnSum"   onclick="setView('sum')">Sum</button>
+      <button class="img-btn active-ov" id="btnOv" onclick="setView('overlay')">Overlay</button>
+    </div>
+    <div class="slider-row" id="ovOpacityRow" style="display:flex">
+      <label>sum α</label>
+      <input type="range" id="ovOpacity" min="0" max="100" value="50"
+             oninput="document.getElementById('ovOpVal').textContent=this.value+'%';drawBase()">
+      <span class="val" id="ovOpVal">50%</span>
+    </div>
+    <div class="slider-row">
+      <label>bright</label>
+      <input type="range" id="imgBright" min="20" max="300" value="100"
+             oninput="document.getElementById('imgBrightVal').textContent=this.value+'%';drawBase()">
+      <span class="val" id="imgBrightVal">100%</span>
+    </div>
+    <div class="slider-row">
+      <label>contrast</label>
+      <input type="range" id="imgContrast" min="20" max="400" value="100"
+             oninput="document.getElementById('imgContrastVal').textContent=this.value+'%';drawBase()">
+      <span class="val" id="imgContrastVal">100%</span>
+    </div>
+    <button class="btn" onclick="resetImageAdjust()" style="font-size:10px;padding:3px 6px">
+      Reset brightness / contrast  (R)</button>
+    <div style="font-size:10px;color:var(--dim);margin-top:3px">display only — measurements are unaffected</div>
+    <div id="noSumMsg" style="display:none;font-size:10px;color:var(--dim);margin-top:4px">No sum image found</div>
+    <label style="display:flex;align-items:center;gap:5px;margin-top:6px;font-size:11px;cursor:pointer">
+      <input type="checkbox" id="applyAlign" checked onchange="drawMesh()"> align channels  (A)
+    </label>
+    <div id="alignInfo" style="font-size:10px;color:var(--dim);margin:1px 0 0 18px">—</div>
+    <div style="font-size:10px;color:var(--dim);margin:2px 0 0 18px">
+      Meshes are stored in BRIGHTFIELD coordinates. NO channel offset is applied
+      here: the per-field offset was a HADA measurement and is not ported, so a
+      reported 0 means "not applied", never "measured as zero".</div>
+    
+  </div>
+
+  <div class="ss">
+    <h3>Mode</h3>
+    <button class="btn atool" id="btnSelect" onclick="setTool('select')">✦ Select / Edit  (S)</button>
+    <button class="btn" id="btnSplit" onclick="setTool('split')">✂ Split at septum  (X)</button>
+    <button class="btn" id="btnMerge" onclick="mergeSelected()">⇔ Merge with neighbour  (M)</button>
+    <button class="btn" id="btnDraw" onclick="setTool('draw')">✚ Draw Cell  (D)</button>
+    <div style="font-size:10px;color:var(--dim);margin-top:3px">
+      All cells are straight capsules with round poles. Split and Merge rebuild
+      both pieces, so edited cells match segmented ones.</div>
+  </div>
+
+  <div class="ss">
+    <h3>Cell Width (new cells)</h3>
+    <div class="slider-row">
+      <label>width</label>
+      <input type="range" id="widthSlider" min="2" max="30" step="0.5" value="9.5"
+             oninput="document.getElementById('widthVal').textContent=this.value">
+      <span class="val" id="widthVal">9.5</span>
+    </div>
+  </div>
+
+  <div class="ss">
+    <h3>Edit</h3>
+    <button class="btn danger" id="deleteBtn" onclick="deleteSelected()" disabled>🗑 Delete  (Del)</button>
+    <button class="btn" id="undoBtn" onclick="undoLast()" disabled>↩ Undo  (Ctrl+Z)</button>
+  </div>
+
+  <div class="ss" style="flex-shrink:0">
+    <h3>Selected Cell</h3>
+    <div id="cellStats" style="color:var(--dim);font-size:11px">—</div>
+  </div>
+</aside>
+</div>
+
+<div class="statusbar">
+  <span id="statusMsg" class="sok">Ready — open a folder to begin</span>
+  <span style="color:var(--dim);margin-left:auto;font-size:10px">scroll=pan · ctrl+scroll=zoom · drag body=move · drag handle=reshape · right-click=delete</span>
+  <span id="mousePos"></span><span id="zoomLevel">100%</span>
+</div>
+
+<div class="modal-bg" id="folderModal">
+  <div class="modal">
+    <div class="mh">Open Experiment Folder <button class="mc" onclick="closeModal('folderModal')">×</button></div>
+    <div class="prow">
+      <input class="pi" id="pathInput" placeholder="Type path…"/>
+      <button class="sb ok" onclick="browseTo(document.getElementById('pathInput').value)">Go</button>
+    </div>
+    <div class="mpath" id="currentPath">—</div>
+    <div class="flist" id="fileList"></div>
+    <div class="mfoot">
+      <div style="flex:1;font-size:10px;color:var(--dim)">Navigate to folder with phase/ and cell_meshes/ subfolders</div>
+      <button class="sb" onclick="closeModal('folderModal')">Cancel</button>
+      <button class="sb ok" onclick="selectFolder()">Use This Folder</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+const S={
+  cells:[],selectedCell:-1,selectedHandle:null,
+  modified:false,tool:'select',
+  scale:1,offsetX:0,offsetY:0,
+  imgW:0,imgH:0,
+  phaseImg:null,   // ImageBitmap
+  sumImg:null,     // ImageBitmap or null
+  view:'overlay',    // 'phase' | 'sum' | 'overlay'
+  matPath:null,phasePath:null,
+  undoStack:[],
+  series:[],currentSeriesIdx:-1,
+  seriesCache:{},  // path -> {cells,modified}
+  drawStep:0,drawP1:null,mouseWorld:null,
+  sumPath:null,foci:[],   // HADA focus markers (advisory overlay)
+};
+
+const canvasBase=document.getElementById('canvasBase');
+const ctxB=canvasBase.getContext('2d');
+const canvasOv=document.getElementById('canvasOverlay');
+const ctx=canvasOv.getContext('2d');
+const wrap=document.getElementById('canvasWrap');
+
+function resizeCanvas(){
+  const w=wrap.clientWidth,h=wrap.clientHeight;
+  canvasBase.width=w; canvasBase.height=h;
+  canvasOv.width=w;   canvasOv.height=h;
+  drawBase(); drawMesh();
+}
+window.addEventListener('resize',resizeCanvas);
+
+// ── Image layer (canvasBase) ──────────────────────────────────────────────────
+// Brightness/contrast are a VIEWING aid only: applied to the canvas at draw
+// time, never to the pixel data. Nothing downstream sees them — the .mat holds
+// coordinates, and intensities are measured from the original TIFFs.
+function imageFilter(){
+  const b=document.getElementById('imgBright');
+  const c=document.getElementById('imgContrast');
+  if(!b||!c) return 'none';
+  const bv=+b.value, cv=+c.value;
+  return (bv===100&&cv===100)?'none':`brightness(${bv}%) contrast(${cv}%)`;
+}
+function resetImageAdjust(){
+  const b=document.getElementById('imgBright'), c=document.getElementById('imgContrast');
+  b.value=100; c.value=100;
+  document.getElementById('imgBrightVal').textContent='100%';
+  document.getElementById('imgContrastVal').textContent='100%';
+  drawBase();
+}
+
+function drawBase(){
+  ctxB.clearRect(0,0,canvasBase.width,canvasBase.height);
+  ctxB.fillStyle='#080a0f'; ctxB.fillRect(0,0,canvasBase.width,canvasBase.height);
+  if(!S.phaseImg) return;
+  ctxB.save();
+  ctxB.filter=imageFilter();
+  ctxB.translate(S.offsetX,S.offsetY); ctxB.scale(S.scale,S.scale);
+
+  const [iax,iay]=imageAlignVec();
+  if(S.view==='phase'||!S.sumImg){
+    ctxB.drawImage(S.phaseImg,0,0);
+  } else if(S.view==='sum'){
+    ctxB.drawImage(S.sumImg,iax,iay);
+  } else { // overlay
+    ctxB.drawImage(S.phaseImg,0,0);
+    if(S.sumImg){
+      const alpha=parseFloat(document.getElementById('ovOpacity').value)/100;
+      // Draw sum in purple/magenta tint
+      ctxB.globalCompositeOperation='screen';
+      ctxB.globalAlpha=alpha;
+      // tint sum image purple by drawing on an offscreen canvas
+      const off=document.createElement('canvas');
+      off.width=S.imgW; off.height=S.imgH;
+      const offCtx=off.getContext('2d');
+      offCtx.drawImage(S.sumImg,iax,iay);
+      // colorize: multiply by purple
+      offCtx.globalCompositeOperation='multiply';
+      offCtx.fillStyle='rgb(200,120,255)';
+      offCtx.fillRect(0,0,S.imgW,S.imgH);
+      ctxB.drawImage(off,0,0);
+      ctxB.globalCompositeOperation='source-over';
+      ctxB.globalAlpha=1;
+    }
+  }
+  ctxB.restore();
+  document.getElementById('zoomLevel').textContent=Math.round(S.scale*100)+'%';
+}
+
+// ── Mesh layer (canvasOverlay) ────────────────────────────────────────────────
+function drawMesh(){
+  ctx.clearRect(0,0,canvasOv.width,canvasOv.height);
+  if(!S.phaseImg){
+    ctx.fillStyle='#1a1e28'; ctx.fillRect(0,0,canvasOv.width,canvasOv.height);
+    ctx.fillStyle='#444'; ctx.font='13px JetBrains Mono'; ctx.textAlign='center';
+    ctx.fillText('Open a folder to begin',canvasOv.width/2,canvasOv.height/2);
+    ctx.textAlign='left'; return;
+  }
+  ctx.save();
+  ctx.translate(S.offsetX,S.offsetY); ctx.scale(S.scale,S.scale);
+  // Meshes are stored in BRIGHTFIELD coordinates. The fluorescence channel is
+  // offset by up to a few px (median 2), so when the sum channel is on screen
+  // the meshes are drawn shifted onto it — that is the frame the HADA signal is
+  // actually measured in. Editing still happens in brightfield coordinates.
+  const av=alignVec();
+  if(av[0]||av[1]) ctx.translate(av[0],av[1]);
+  S.cells.forEach((c,i)=>drawCell(c,i,i===S.selectedCell));
+  if(av[0]||av[1]) ctx.translate(-av[0],-av[1]);
+
+  if(S.tool==='draw'&&S.mouseWorld){
+    if(S.drawStep===1){
+      const w=parseFloat(document.getElementById('widthSlider').value);
+      drawPreview(S.drawP1.wx,S.drawP1.wy,S.mouseWorld.wx,S.mouseWorld.wy,w);
+      ctx.beginPath();ctx.arc(S.drawP1.wx,S.drawP1.wy,4/S.scale,0,Math.PI*2);
+      ctx.fillStyle='#ff6b35';ctx.fill();
+    }
+    ctx.beginPath();ctx.arc(S.mouseWorld.wx,S.mouseWorld.wy,3/S.scale,0,Math.PI*2);
+    ctx.fillStyle=S.drawStep===0?'rgba(255,107,53,.5)':'rgba(255,255,255,.7)';ctx.fill();
+  }
+  ctx.restore();
+  drawFoci();
+}
+
+function draw(){drawBase();drawMesh();}
+// drawMesh() ends by calling drawFoci() so markers sit above the meshes.
+
+/* Meshes never move. The two channels are misregistered by dx=0, dy=+1..+2 px
+   on this microscope, and the old behaviour shifted the MESH onto the
+   fluorescence image - so meshes jumped whenever the view changed, and an edit
+   made while looking at fluorescence was saved into a frame it was not drawn
+   in. Instead the fluorescence IMAGE is now shifted into brightfield
+   coordinates, which is the frame meshes are stored and analysed in. Both
+   channels are then displayed in one frame: nothing jumps, and nudging a mesh
+   onto the HADA signal lands correctly in the stored coordinates. */
+function alignVec(){ return [0,0]; }
+
+// Shift applied to the FLUORESCENCE image so it sits in brightfield coordinates.
+function imageAlignVec(){
+  if(!document.getElementById('applyAlign')?.checked) return [0,0];
+  return [-(S.alignDx||0), -(S.alignDy||0)];
+}
+
+function drawCell(cell,ci,selected){
+  const mesh=cell.mesh,model=cell.model;
+  if(!mesh||mesh.length<2)return;
+
+  // outline (model polygon with endcaps)
+  if(model&&model.length>2){
+    ctx.beginPath();ctx.moveTo(model[0][0],model[0][1]);
+    for(let i=1;i<model.length;i++)ctx.lineTo(model[i][0],model[i][1]);
+    ctx.closePath();
+    ctx.strokeStyle=selected?'rgba(255,107,53,.95)':'rgba(0,229,160,.65)';
+    ctx.lineWidth=(selected?1.5:1)/S.scale;ctx.stroke();
+    if(selected){ctx.fillStyle='rgba(255,107,53,.07)';ctx.fill();}
+  }
+
+  // centerline
+  ctx.beginPath();
+  mesh.forEach((r,i)=>{
+    const cx=(r[0]+r[2])/2,cy=(r[1]+r[3])/2;
+    i===0?ctx.moveTo(cx,cy):ctx.lineTo(cx,cy);
+  });
+  ctx.strokeStyle=selected?'rgba(255,107,53,.6)':'rgba(0,229,160,.3)';
+  ctx.lineWidth=0.8/S.scale;ctx.stroke();
+
+  // 3 control handles on selected cell:
+  // • pole1 (start) — move extends/shrinks from start
+  // • pole2 (end)   — move extends/shrinks from end
+  // • width handle  — midpoint side, drag left/right changes width
+  if(selected){
+    const poles=getCellPoles(mesh);
+    if(poles){
+      const {p1x,p1y,p2x,p2y,midLx,midLy,midRx,midRy}=poles;
+      const hr=5/S.scale;
+      drawPoleHandle(p1x,p1y,hr,'#ff6b35');
+      drawPoleHandle(p2x,p2y,hr,'#ff6b35');
+      drawWidthHandle(midLx,midLy,hr,'#fbbf24');
+      drawWidthHandle(midRx,midRy,hr,'#fbbf24');
+    }
+  }
+
+  // label
+  const cx0=(mesh[0][0]+mesh[0][2])/2,cy0=(mesh[0][1]+mesh[0][3])/2;
+  ctx.fillStyle=selected?'#ff6b35':'#00e5a0';
+  ctx.font=`${10/S.scale}px JetBrains Mono`;
+  ctx.fillText(ci+1,cx0+2/S.scale,cy0-2/S.scale);
+}
+
+function drawPoleHandle(x,y,r,color){
+  ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);
+  ctx.fillStyle=color;ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,.4)';ctx.lineWidth=0.5/S.scale;ctx.stroke();
+}
+function drawWidthHandle(x,y,r,color){
+  ctx.beginPath();
+  ctx.rect(x-r,y-r,r*2,r*2);
+  ctx.fillStyle=color;ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,.4)';ctx.lineWidth=0.5/S.scale;ctx.stroke();
+}
+
+function getCellPoles(mesh){
+  if(!mesh||mesh.length<2)return null;
+  const n=mesh.length;
+  // Skip zero-width end rungs (segmentator zero-width pole points)
+  let i0=0, i1=n-1;
+  while(i0<n-1 && Math.hypot(mesh[i0][2]-mesh[i0][0],mesh[i0][3]-mesh[i0][1])<0.5) i0++;
+  while(i1>0   && Math.hypot(mesh[i1][2]-mesh[i1][0],mesh[i1][3]-mesh[i1][1])<0.5) i1--;
+  const p1x=(mesh[i0][0]+mesh[i0][2])/2, p1y=(mesh[i0][1]+mesh[i0][3])/2;
+  const p2x=(mesh[i1][0]+mesh[i1][2])/2, p2y=(mesh[i1][1]+mesh[i1][3])/2;
+  const dx=p2x-p1x, dy=p2y-p1y, len=Math.hypot(dx,dy)||1;
+  const ax=dx/len, ay=dy/len;
+  const r=cellWid(mesh)/2;
+  const mi=Math.floor(n/2);
+  const midLx=mesh[mi][0], midLy=mesh[mi][1];  // left side
+  const midRx=mesh[mi][2], midRy=mesh[mi][3];  // right side
+  return{p1x,p1y,p2x,p2y,midLx,midLy,midRx,midRy,ax,ay,r};
+}
+
+function drawPreview(tipX1,tipY1,tipX2,tipY2,w){
+  // Dots are at the outer tips of the endcaps.
+  // Rung centers are inset by r from each tip.
+  // Arc center = rung center, arc radius = r → outermost arc point = tip dot. ✓
+  const dx=tipX2-tipX1,dy=tipY2-tipY1,len=Math.hypot(dx,dy);
+  if(len<w)return;  // too short to form a capsule
+  const ax=dx/len,ay=dy/len,nx=-ay,ny=ax,r=w/2;
+  const rx1=tipX1+r*ax,ry1=tipY1+r*ay;  // start rung center
+  const rx2=tipX2-r*ax,ry2=tipY2-r*ay;  // end rung center
+  const ang=Math.atan2(ay,ax);
+  ctx.beginPath();
+  ctx.moveTo(rx1-r*nx,ry1-r*ny);
+  ctx.lineTo(rx2-r*nx,ry2-r*ny);
+  ctx.arc(rx2,ry2,r,ang-Math.PI/2,ang+Math.PI/2);  // end cap, center=rung center
+  ctx.lineTo(rx1+r*nx,ry1+r*ny);
+  ctx.arc(rx1,ry1,r,ang+Math.PI/2,ang-Math.PI/2);  // start cap
+  ctx.closePath();
+  ctx.strokeStyle='rgba(255,107,53,.8)';ctx.lineWidth=1.2/S.scale;ctx.stroke();
+  ctx.fillStyle='rgba(255,107,53,.1)';ctx.fill();
+  ctx.fillStyle='rgba(255,107,53,.9)';ctx.font=`${9/S.scale}px JetBrains Mono`;
+  ctx.fillText(`L:${len.toFixed(1)}  W:${w}`,(tipX1+tipX2)/2+3/S.scale,(tipY1+tipY2)/2-3/S.scale);
+}
+
+// ── Mouse ──────────────────────────────────────────────────────────────────────
+let drag=null;
+
+canvasOv.addEventListener('contextmenu',e=>{
+  e.preventDefault();
+  const {wx,wy}=tw(e);
+  const ci=hitCell(wx,wy);
+  if(ci>=0){
+    saveUndo();S.cells.splice(ci,1);
+    if(S.selectedCell===ci)selectCell(-1);
+    else if(S.selectedCell>ci)S.selectedCell--;
+    setModified(true);renderCellList();drawMesh();setStatus('Cell deleted');
+  }
+});
+
+canvasOv.addEventListener('mousedown',e=>{
+  if(e.button!==0)return;
+  const {wx,wy}=tw(e);
+
+  if(S.tool==='draw'){
+    if(S.drawStep===0){S.drawP1={wx,wy};S.drawStep=1;setHint('Now click the other pole — Esc to cancel');}
+    else{
+      const w=parseFloat(document.getElementById('widthSlider').value);
+      commitCell(S.drawP1.wx,S.drawP1.wy,wx,wy,w);
+      S.drawStep=0;S.drawP1=null;setHint('Click first pole to draw another cell');
+    }
+    return;
+  }
+
+  if(S.tool==='split'){
+    const ci=hitCell(wx,wy);
+    if(ci<0){setStatus('Click inside a cell, on the septum',true);return;}
+    splitCellAt(ci,wx,wy);
+    return;
+  }
+
+  if(S.selectedCell>=0){
+    const h=hitHandleNew(wx,wy,S.selectedCell);
+    if(h){
+      saveUndo();
+      const mesh=S.cells[h.cell].mesh;
+      const n=mesh.length;
+      if(h.type==='pole'){
+        const c1x=(mesh[0][0]+mesh[0][2])/2, c1y=(mesh[0][1]+mesh[0][3])/2;
+        const c2x=(mesh[n-1][0]+mesh[n-1][2])/2, c2y=(mesh[n-1][1]+mesh[n-1][3])/2;
+        h.fixedX=h.which===1?c2x:c1x; h.fixedY=h.which===1?c2y:c1y;
+        h.initW=cellWid(mesh);
+      }
+      if(h.type==='width'){
+        h.fixedP1x=(mesh[0][0]+mesh[0][2])/2; h.fixedP1y=(mesh[0][1]+mesh[0][3])/2;
+        h.fixedP2x=(mesh[n-1][0]+mesh[n-1][2])/2; h.fixedP2y=(mesh[n-1][1]+mesh[n-1][3])/2;
+        const mi=Math.floor(n/2);
+        h.axisCx=(mesh[mi][0]+mesh[mi][2])/2; h.axisCy=(mesh[mi][1]+mesh[mi][3])/2;
+        h.initW=cellWid(mesh);
+      }
+      drag=h;return;
+    }
+  }
+  const ci=hitCell(wx,wy);
+  selectCell(ci);
+  if(ci>=0){
+    const h=hitHandleNew(wx,wy,ci);
+    if(h){
+      saveUndo();
+      const mesh=S.cells[h.cell].mesh;
+      const n=mesh.length;
+      if(h.type==='pole'){
+        const c1x=(mesh[0][0]+mesh[0][2])/2, c1y=(mesh[0][1]+mesh[0][3])/2;
+        const c2x=(mesh[n-1][0]+mesh[n-1][2])/2, c2y=(mesh[n-1][1]+mesh[n-1][3])/2;
+        h.fixedX=h.which===1?c2x:c1x; h.fixedY=h.which===1?c2y:c1y;
+        h.initW=cellWid(mesh);
+      }
+      if(h.type==='width'){
+        h.fixedP1x=(mesh[0][0]+mesh[0][2])/2; h.fixedP1y=(mesh[0][1]+mesh[0][3])/2;
+        h.fixedP2x=(mesh[n-1][0]+mesh[n-1][2])/2; h.fixedP2y=(mesh[n-1][1]+mesh[n-1][3])/2;
+        const mi=Math.floor(n/2);
+        h.axisCx=(mesh[mi][0]+mesh[mi][2])/2; h.axisCy=(mesh[mi][1]+mesh[mi][3])/2;
+        h.initW=cellWid(mesh);
+      }
+      drag=h;
+    } else {
+      saveUndo();
+      drag={type:'move',cell:ci,startWx:wx,startWy:wy,
+            origMesh:JSON.parse(JSON.stringify(S.cells[ci].mesh)),
+            origModel:JSON.parse(JSON.stringify(S.cells[ci].model))};
+    }
+  }
+});
+
+let rafPending=false;
+canvasOv.addEventListener('mousemove',e=>{
+  const {wx,wy}=tw(e);
+  S.mouseWorld={wx,wy};
+  document.getElementById('mousePos').textContent=`x:${wx.toFixed(1)} y:${wy.toFixed(1)}`;
+
+  if(drag){
+    if(drag.type==='move'){
+      const dx=wx-drag.startWx,dy=wy-drag.startWy;
+      const mesh=S.cells[drag.cell].mesh;
+      drag.origMesh.forEach((r,i)=>{
+        mesh[i][0]=r[0]+dx;mesh[i][1]=r[1]+dy;
+        mesh[i][2]=r[2]+dx;mesh[i][3]=r[3]+dy;
+      });
+      S.cells[drag.cell].model=drag.origModel.map(p=>[p[0]+dx,p[1]+dy]);
+      S.cells[drag.cell].box=meshToBox(mesh);
+      canvasOv.style.cursor='grabbing';
+      drag.hasMoved=true;
+    }
+    else if(drag.type==='pole'){
+      const w=drag.initW;
+      if(drag.which===1){
+        updateCellFromPoles(drag.cell, wx, wy, drag.fixedX, drag.fixedY, w);
+      } else {
+        updateCellFromPoles(drag.cell, drag.fixedX, drag.fixedY, wx, wy, w);
+      }
+    }
+
+    else if(drag.type==='width'){
+      const dist=Math.hypot(wx-drag.startWx, wy-drag.startWy);
+      if(dist<1.5/S.scale) return;
+      // Project mouse onto cell normal to get signed distance from centerline
+      const poles=getCellPoles(S.cells[drag.cell].mesh);
+      const nx=-poles.ay, ny=poles.ax;
+      const proj=(wx-drag.axisCx)*nx+(wy-drag.axisCy)*ny; // +ve = right side
+      // Each square controls its own side:
+      // right side (R): proj = new right half-width
+      // left side  (L): -proj = new left half-width
+      const thisSide = drag.which==='R' ? proj : -proj;
+      const otherSide = drag.initW/2;  // opposite side stays fixed
+      const newW = Math.max(2, thisSide + otherSide);
+      // Shift pole centers along normal so the fixed side doesn't move
+      const shift = (newW - drag.initW) / 2 * (drag.which==='R' ? 1 : -1);
+      const np1x=drag.fixedP1x+shift*nx, np1y=drag.fixedP1y+shift*ny;
+      const np2x=drag.fixedP2x+shift*nx, np2y=drag.fixedP2y+shift*ny;
+      updateCellFromPoles(drag.cell, np1x, np1y, np2x, np2y, newW);
+      drag.hasMoved=true;
+    }
+    setModified(true);updateCellStats();
+  }
+
+  if(!rafPending){rafPending=true;requestAnimationFrame(()=>{drawMesh();rafPending=false;});}
+});
+
+canvasOv.addEventListener('mouseup',()=>{
+  if(drag){
+    canvasOv.style.cursor='default';
+    // If user clicked a handle but didn't drag, undo the saveUndo (revert state)
+    if((drag.type==='pole'||drag.type==='width') && !drag.hasMoved){
+      S.undoStack.pop();
+      if(!S.undoStack.length) document.getElementById('undoBtn').disabled=true;
+    }
+  }
+  drag=null;
+});
+
+canvasOv.addEventListener('wheel',e=>{
+  e.preventDefault();
+  if(e.ctrlKey){
+    // ctrl+scroll = zoom
+    const f=e.deltaY<0?1.12:0.88;
+    const rect=canvasOv.getBoundingClientRect();
+    const mx=e.clientX-rect.left,my=e.clientY-rect.top;
+    S.offsetX=mx-(mx-S.offsetX)*f;S.offsetY=my-(my-S.offsetY)*f;S.scale*=f;
+    draw();
+  } else if(e.shiftKey){
+    // shift+scroll = pan
+    S.offsetX-=e.deltaX;S.offsetY-=e.deltaY;
+    draw();
+  } else {
+    // plain scroll = next/prev series
+    if(e.deltaY>0){const n=S.currentSeriesIdx+1;if(n<S.series.length)loadSeries(n);}
+    else{const n=S.currentSeriesIdx-1;if(n>=0)loadSeries(n);}
+  }
+},{passive:false});
+
+function tw(e){
+  const r=canvasOv.getBoundingClientRect();
+  return{wx:(e.clientX-r.left-S.offsetX)/S.scale,wy:(e.clientY-r.top-S.offsetY)/S.scale};
+}
+
+function initHandleDrag(h, wx, wy){
+  const poles=getCellPoles(S.cells[h.cell].mesh);
+  const {t1x,t1y,t2x,t2y,midSx,midSy}=poles;
+  const mesh=S.cells[h.cell].mesh;
+  const n=mesh.length;
+  h.startWx=wx; h.startWy=wy; h.hasMoved=false;
+  if(h.type==='pole'){
+    const hx=h.which===1?t1x:t2x, hy=h.which===1?t1y:t2y;
+    h.offX=wx-hx; h.offY=wy-hy;
+    h.fixedX=h.which===1?t2x:t1x; h.fixedY=h.which===1?t2y:t1y;
+    h.initW=cellWid(mesh);
+  }
+  if(h.type==='width'){
+    h.fixedP1x=t1x; h.fixedP1y=t1y; h.fixedP2x=t2x; h.fixedP2y=t2y;
+    const mi=Math.floor(n/2);
+    h.axisCx=(mesh[mi][0]+mesh[mi][2])/2; h.axisCy=(mesh[mi][1]+mesh[mi][3])/2;
+    h.offX=wx-midSx; h.offY=wy-midSy;
+  }
+}
+
+function hitHandleNew(wx,wy,ci){
+  const mesh=S.cells[ci].mesh;
+  if(!mesh||mesh.length<2)return null;
+  const poles=getCellPoles(mesh);
+  if(!poles)return null;
+  const {p1x,p1y,p2x,p2y,midLx,midLy,midRx,midRy}=poles;
+  const tol=8/S.scale;
+  if(Math.hypot(p1x-wx,p1y-wy)<tol) return{type:'pole',cell:ci,which:1};
+  if(Math.hypot(p2x-wx,p2y-wy)<tol) return{type:'pole',cell:ci,which:2};
+  if(Math.hypot(midLx-wx,midLy-wy)<tol) return{type:'width',cell:ci,which:'L'};
+  if(Math.hypot(midRx-wx,midRy-wy)<tol) return{type:'width',cell:ci,which:'R'};
+  return null;
+}
+
+function hitCell(wx,wy){
+  for(let ci=0;ci<S.cells.length;ci++){
+    const m=S.cells[ci].model;
+    if(m&&m.length>2&&pip(wx,wy,m))return ci;
+  }
+  return -1;
+}
+function pip(x,y,poly){
+  let inside=false;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const xi=poly[i][0],yi=poly[i][1],xj=poly[j][0],yj=poly[j][1];
+    if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/(yj-yi)+xi))inside=!inside;
+  }
+  return inside;
+}
+
+// Recompute capsule mesh from endcap TIPS. All rungs are full-width.
+// getCellPoles always computes tips as rung_center +/- r*axis, so this is stable.
+function updateCellFromPoles(ci,x1,y1,x2,y2,w){
+  const dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy);
+  if(len<1)return;
+  const ax=dx/len,ay=dy/len,nx=-ay,ny=ax,r=w/2;
+  const n=S.cells[ci].mesh.length||24;
+  const mesh=new Array(n);
+  for(let i=0;i<n;i++){
+    const t=i/(n-1);
+    const cx=x1+t*dx,cy=y1+t*dy;
+    mesh[i]=[cx-r*nx,cy-r*ny,cx+r*nx,cy+r*ny];
+  }
+  // model polygon: endcap arcs centered at rung centers (inset by r from pole tips)
+  const ex=x2-ax*r, ey=y2-ay*r;  // end cap center
+  const sx=x1+ax*r, sy=y1+ay*r;  // start cap center
+  const n_cap=8; const pts=[];
+  // left side: start→end (one straight line, sampled as 2 pts)
+  const nx2=-ay, ny2=ax;
+  pts.push([sx-r*nx2, sy-r*ny2]);   // start cap, left tangent point
+  pts.push([ex-r*nx2, ey-r*ny2]);   // end cap, left tangent point
+  // end cap arc (left tangent → right tangent, going around tip)
+  const ang=Math.atan2(ay,ax)-Math.PI/2;
+  for(let k=0;k<=n_cap;k++){const a=ang+Math.PI*k/n_cap;pts.push([ex+r*Math.cos(a),ey+r*Math.sin(a)]);}
+  // right side: end→start
+  pts.push([sx+r*nx2, sy+r*ny2]);   // start cap, right tangent point
+  // start cap arc (right tangent → left tangent, going around tip)
+  const ang2=Math.atan2(ay,ax)+Math.PI/2;
+  for(let k=0;k<=n_cap;k++){const a=ang2+Math.PI*k/n_cap;pts.push([sx+r*Math.cos(a),sy+r*Math.sin(a)]);}
+  pts.push(pts[0]);
+  const xs=mesh.flatMap(r=>[r[0],r[2]]),ys=mesh.flatMap(r=>[r[1],r[3]]);
+  const bx1=Math.min(...xs),by1=Math.min(...ys);
+  S.cells[ci].mesh=mesh;S.cells[ci].model=pts;
+  S.cells[ci].box=[bx1,by1,Math.max(...xs)-bx1,Math.max(...ys)-by1];
+}
+
+// ── Draw mode ──────────────────────────────────────────────────────────────────
+function commitCell(tipX1,tipY1,tipX2,tipY2,w){
+  const dx=tipX2-tipX1, dy=tipY2-tipY1, len=Math.hypot(dx,dy);
+  if(len<w){setStatus('Cell too short',true);return;}
+  saveUndo();
+  const ax=dx/len, ay=dy/len;
+  // pass tips directly — updateCellFromPoles handles the inset
+  const x1=tipX1, y1=tipY1;
+  const x2=tipX2, y2=tipY2;
+  S.cells.push({mesh:new Array(24).fill(null).map(()=>[x1,y1,x1,y1]),model:[],box:[0,0,1,1]});
+  const ci=S.cells.length-1;
+  updateCellFromPoles(ci,x1,y1,x2,y2,w);
+  selectCell(ci);setModified(true);renderCellList();
+  document.getElementById('cellCount').textContent=`${S.cells.length} cells`;
+  setStatus(`Cell ${S.cells.length} drawn`);draw();
+}
+
+// ── Mesh helpers ───────────────────────────────────────────────────────────────
+function rebuildModel(mesh){
+  // Full capsule outline with endcaps — used after move
+  const n=mesh.length;
+  if(n<2) return mesh.map(r=>[[r[0],r[1]]]).flat();
+  const c1x=(mesh[0][0]+mesh[0][2])/2,   c1y=(mesh[0][1]+mesh[0][3])/2;
+  const c2x=(mesh[n-1][0]+mesh[n-1][2])/2, c2y=(mesh[n-1][1]+mesh[n-1][3])/2;
+  const dx=c2x-c1x,dy=c2y-c1y,len=Math.hypot(dx,dy)||1;
+  const ax=dx/len,ay=dy/len,r=cellWid(mesh)/2;
+  const ex=c2x, ey=c2y;
+  const sx=c1x, sy=c1y;
+  const nx2=-ay, ny2=ax;
+  const n_cap=8; const pts=[];
+  pts.push([sx-r*nx2, sy-r*ny2]);
+  pts.push([ex-r*nx2, ey-r*ny2]);
+  const ang=Math.atan2(ay,ax)-Math.PI/2;
+  for(let k=0;k<=n_cap;k++){const a=ang+Math.PI*k/n_cap;pts.push([ex+r*Math.cos(a),ey+r*Math.sin(a)]);}
+  pts.push([sx+r*nx2, sy+r*ny2]);
+  const ang2=Math.atan2(ay,ax)+Math.PI/2;
+  for(let k=0;k<=n_cap;k++){const a=ang2+Math.PI*k/n_cap;pts.push([sx+r*Math.cos(a),sy+r*Math.sin(a)]);}
+  pts.push(pts[0]);
+  return pts;
+}
+function meshToBox(mesh){
+  const xs=mesh.flatMap(r=>[r[0],r[2]]),ys=mesh.flatMap(r=>[r[1],r[3]]);
+  const x1=Math.min(...xs),y1=Math.min(...ys);
+  return[x1,y1,Math.max(...xs)-x1,Math.max(...ys)-y1];
+}
+
+// ── Straight capsule with round poles ─────────────────────────────────────────
+// Cells are modelled as straight rods with hemispherical caps, matching what the
+// segmentation writes. Splitting used to keep the full-width rung at the cut,
+// which left a flat square end; both halves are now rebuilt as proper capsules.
+function makeCapsule(x1,y1,x2,y2,width,nRungs){
+  const dx=x2-x1, dy=y2-y1, L=Math.hypot(dx,dy);
+  if(L<1e-6) return null;
+  const ax=dx/L, ay=dy/L, nx=-ay, ny=ax, r=width/2;
+  const n=Math.max(10, nRungs||Math.max(12,Math.round(L)));
+  const mesh=[];
+  for(let i=0;i<n;i++){
+    const d=L*i/(n-1), d2=L-d;
+    // hemispherical taper within r of each pole, cylindrical in between
+    const h1 = d  < r ? Math.sqrt(Math.max(0, r*r-(r-d )*(r-d ))) : r;
+    const h2 = d2 < r ? Math.sqrt(Math.max(0, r*r-(r-d2)*(r-d2))) : r;
+    const hw=Math.min(h1,h2);
+    const cx=x1+ax*d, cy=y1+ay*d;
+    mesh.push([cx+nx*hw, cy+ny*hw, cx-nx*hw, cy-ny*hw]);
+  }
+  return mesh;
+}
+
+// Outline traced from the rungs: down the left side, back up the right. With
+// ~1 px rung spacing the hemispherical taper renders as a smooth round pole.
+function outlineFromMesh(mesh){
+  const pts=[];
+  for(let i=0;i<mesh.length;i++) pts.push([mesh[i][0],mesh[i][1]]);
+  for(let i=mesh.length-1;i>=0;i--){
+    const w=Math.hypot(mesh[i][2]-mesh[i][0],mesh[i][3]-mesh[i][1]);
+    if(w>1e-6) pts.push([mesh[i][2],mesh[i][3]]);   // skip duplicate pole points
+  }
+  pts.push(pts[0]);
+  return pts;
+}
+
+function cellFromPoles(x1,y1,x2,y2,width){
+  const mesh=makeCapsule(x1,y1,x2,y2,width);
+  if(!mesh) return null;
+  return {mesh:mesh, model:outlineFromMesh(mesh), box:meshToBox(mesh)};
+}
+function meshPoles(mesh){
+  const n=mesh.length;
+  return [(mesh[0][0]+mesh[0][2])/2,(mesh[0][1]+mesh[0][3])/2,
+          (mesh[n-1][0]+mesh[n-1][2])/2,(mesh[n-1][1]+mesh[n-1][3])/2];
+}
+
+// ── Split / merge on existing meshes ──────────────────────────────────────────
+// Chains are divided EVENLY by the segmentation, so boundaries land on real
+// septa only when cells happen to be equal length. Fixing that by redrawing
+// would replace a correctly curved mesh with a straight one — so instead the
+// rungs are kept and only cut or rejoined.
+function splitCellAt(ci,wx,wy){
+  const cell=S.cells[ci]; if(!cell) return false;
+  const mesh=cell.mesh;
+  if(!mesh||mesh.length<6){setStatus('Cell too short to split',true);return false;}
+  let best=-1,bd=Infinity;
+  for(let i=0;i<mesh.length;i++){
+    const cx=(mesh[i][0]+mesh[i][2])/2, cy=(mesh[i][1]+mesh[i][3])/2;
+    const d=Math.hypot(cx-wx,cy-wy);
+    if(d<bd){bd=d;best=i;}
+  }
+  const MIN=3;   // keep a couple of rungs either side so both halves stay valid
+  if(best<MIN||best>mesh.length-1-MIN){
+    setStatus('Too close to a pole — click nearer the middle',true);return false;
+  }
+  saveUndo();
+  // Rebuild both halves as straight capsules so each gets a proper round pole
+  // at the cut instead of a flat square end.
+  const [p1x,p1y,p2x,p2y]=meshPoles(mesh);
+  const cx=(mesh[best][0]+mesh[best][2])/2, cy=(mesh[best][1]+mesh[best][3])/2;
+  const w=cellWid(mesh);
+  const A=cellFromPoles(p1x,p1y,cx,cy,w);
+  const B=cellFromPoles(cx,cy,p2x,p2y,w);
+  if(!A||!B){setStatus('Split failed — pieces too short',true);return false;}
+  S.cells.splice(ci,1,A,B);
+  setModified(true);selectCell(ci);
+  setStatus(`Split into cells ${ci+1} and ${ci+2}`);
+  return true;
+}
+
+function mergeCells(ci,cj){
+  const A=S.cells[ci].mesh.map(r=>r.slice());
+  const B=S.cells[cj].mesh.map(r=>r.slice());
+  const mid=(m,i)=>[(m[i][0]+m[i][2])/2,(m[i][1]+m[i][3])/2];
+  const a0=mid(A,0),a1=mid(A,A.length-1),b0=mid(B,0),b1=mid(B,B.length-1);
+  const d=(p,q)=>Math.hypot(p[0]-q[0],p[1]-q[1]);
+  // Join at whichever pair of poles is closest, reversing as needed so the
+  // rungs run continuously from one free pole to the other.
+  const opts=[
+    {gap:d(a1,b0),A:A,          B:B},
+    {gap:d(a1,b1),A:A,          B:B.slice().reverse()},
+    {gap:d(a0,b0),A:A.slice().reverse(),B:B},
+    {gap:d(a0,b1),A:A.slice().reverse(),B:B.slice().reverse()},
+  ].sort((p,q)=>p.gap-q.gap);
+  const pick=opts[0];
+  if(pick.gap>12){setStatus('Those cells do not touch — merge cancelled',true);return false;}
+  saveUndo();
+  // Rebuild as one straight capsule spanning the two FREE poles, so the join
+  // gets a clean body rather than two stitched half-cells.
+  const pa=meshPoles(pick.A), pb=meshPoles(pick.B);
+  const w=(cellWid(pick.A)+cellWid(pick.B))/2;
+  const merged=cellFromPoles(pa[0],pa[1],pb[2],pb[3],w);
+  if(!merged){setStatus('Merge failed',true);return false;}
+  const keep=Math.min(ci,cj),drop=Math.max(ci,cj);
+  S.cells.splice(drop,1);
+  S.cells[keep]=merged;
+  setModified(true);selectCell(keep);
+  setStatus(`Merged into cell ${keep+1}`);
+  return true;
+}
+
+function mergeSelected(){
+  const ci=S.selectedCell;
+  if(ci<0){setStatus('Select a cell first, then press M',true);return;}
+  const mid=(m,i)=>[(m[i][0]+m[i][2])/2,(m[i][1]+m[i][3])/2];
+  const A=S.cells[ci].mesh;
+  const ends=[mid(A,0),mid(A,A.length-1)];
+  let best=-1,bd=Infinity;
+  for(let cj=0;cj<S.cells.length;cj++){
+    if(cj===ci) continue;
+    const B=S.cells[cj].mesh; if(!B||B.length<2) continue;
+    for(const p of ends) for(const q of [mid(B,0),mid(B,B.length-1)]){
+      const dd=Math.hypot(p[0]-q[0],p[1]-q[1]);
+      if(dd<bd){bd=dd;best=cj;}
+    }
+  }
+  if(best<0||bd>12){setStatus('No touching neighbour found',true);return;}
+  mergeCells(ci,best);
+}
+function cellLen(mesh){
+  let l=0;
+  for(let i=1;i<mesh.length;i++){
+    const cx0=(mesh[i-1][0]+mesh[i-1][2])/2,cy0=(mesh[i-1][1]+mesh[i-1][3])/2;
+    const cx1=(mesh[i][0]+mesh[i][2])/2,cy1=(mesh[i][1]+mesh[i][3])/2;
+    l+=Math.hypot(cx1-cx0,cy1-cy0);
+  }
+  return l;
+}
+function cellWid(mesh){
+  // Average rung widths, skipping any degenerate zero-width end rungs (legacy segmentator mats)
+  const ws=mesh.map(r=>Math.hypot(r[2]-r[0],r[3]-r[1])).filter(w=>w>0.5);
+  if(!ws.length) return 0;
+  return ws.reduce((a,b)=>a+b,0)/ws.length;
+}
+
+// ── Selection ──────────────────────────────────────────────────────────────────
+function selectCell(ci){
+  S.selectedCell=ci;S.selectedHandle=null;
+  document.getElementById('deleteBtn').disabled=(ci<0);
+  updateCellStats();renderCellList();drawMesh();
+}
+function updateCellStats(){
+  const el=document.getElementById('cellStats');
+  if(S.selectedCell<0){el.textContent='—';return;}
+  const mesh=S.cells[S.selectedCell]?.mesh;
+  if(!mesh||mesh.length<2){el.textContent='No mesh';return;}
+  el.innerHTML=`
+    <div class="sr"><span class="sl">Cell #</span><span class="sv">${S.selectedCell+1}</span></div>
+    <div class="sr"><span class="sl">Length</span><span class="sv">${cellLen(mesh).toFixed(1)} px</span></div>
+    <div class="sr"><span class="sl">Width</span><span class="sv">${cellWid(mesh).toFixed(1)} px</span></div>
+    <div class="sr"><span class="sl">Rungs</span><span class="sv">${mesh.length}</span></div>`;
+}
+function renderCellList(){
+  const el=document.getElementById('cellList');el.innerHTML='';
+  S.cells.forEach((c,ci)=>{
+    const div=document.createElement('div');
+    div.className='ci'+(ci===S.selectedCell?' sel':'');
+    const len=c.mesh?.length>=2?cellLen(c.mesh).toFixed(0):'?';
+    div.textContent=`Cell ${ci+1}  (${len}px)`;
+    div.onclick=()=>selectCell(ci);
+    el.appendChild(div);
+  });
+}
+function renderSeriesList(){
+  const el=document.getElementById('seriesList');el.innerHTML='';
+  S.series.forEach((s,i)=>{
+    const mod=S.seriesCache[s.mat]?.modified;
+    const isNew=!s.has_mat;
+    const div=document.createElement('div');
+    div.className='si'+(i===S.currentSeriesIdx?' active':'')+(s.phase?'':' nophase');
+    const newBadge=isNew?'<span style="color:#7a8499;font-size:9px;margin-left:4px">NEW</span>':'';
+    const modBadge=mod?'<span style="color:#ff6b35;margin-left:4px">●</span>':'';
+    div.innerHTML=`<div class="dot"></div>${s.name}${newBadge}${modBadge}`;
+    div.onclick=()=>loadSeries(i);
+    el.appendChild(div);
+  });
+}
+
+// ── Image view toggle ─────────────────────────────────────────────────────────
+function setView(v){
+  S.view=v;
+  document.getElementById('btnPhase').className='img-btn'+(v==='phase'?' active':'');
+  document.getElementById('btnSum').className='img-btn'+(v==='sum'?' active-sum':'');
+  document.getElementById('btnOv').className='img-btn'+(v==='overlay'?' active-ov':'');
+  document.getElementById('ovOpacityRow').style.display=v==='overlay'?'flex':'none';
+  if((v==='sum'||v==='overlay')&&!S.sumImg){
+    document.getElementById('noSumMsg').style.display='block';
+  } else {
+    document.getElementById('noSumMsg').style.display='none';
+  }
+  drawBase();
+}
+
+// ── Tool ──────────────────────────────────────────────────────────────────────
+function setTool(t){
+  S.tool=t;S.drawStep=0;S.drawP1=null;
+  document.getElementById('btnSelect').classList.toggle('atool',t==='select');
+  document.getElementById('btnDraw').classList.toggle('atool',t==='draw');
+  const bs=document.getElementById('btnSplit'); if(bs) bs.classList.toggle('atool',t==='split');
+  const mb=document.getElementById('modeBadge');
+  if(t==='draw'){mb.className='mbadge mdraw';mb.textContent='DRAW CELL';canvasOv.style.cursor='crosshair';setHint('Click the first pole end to start');}
+  else if(t==='split'){mb.className='mbadge mdraw';mb.textContent='SPLIT AT SEPTUM';canvasOv.style.cursor='crosshair';setHint('Click on a cell where the septum is — it keeps its curve');}
+  else{mb.className='mbadge msel';mb.textContent='SELECT';canvasOv.style.cursor='default';setHint('');}
+}
+function setHint(m){document.getElementById('drawHint').textContent=m;}
+
+// ── HADA focus markers ────────────────────────────────────────────────────────
+// HADA labels wall built DURING the pulse, so a focus is an ACTIVE septum (or
+// pole). That makes foci a useful pointer to where a division site is when the
+// brightfield septum is faint.
+//
+// They are a hint, not the boundary. A septum formed before the pulse carries
+// no label, so foci find active sites only. Confirm each split in brightfield:
+// the fine-tuned model is trained on brightfield and never sees this channel,
+// so nothing here leaks into the segmentation or the measurement.
+function loadFoci(){
+  // NOT PORTED. The HADA focus overlay marked peptidoglycan synthesised during a
+  // labelling pulse - a different experiment's readout, and its detector lives in
+  // the segmentation repository's `hada` package, which is deliberately left
+  // behind. Kept as a no-op so nothing below has to test for its absence.
+  S.foci=[]; drawMesh();
+}
+
+
+
+/* Would the analysis KEEP this focus?
+   It accepts a peak within grow_px of any mesh. The server no longer applies
+   that test, so it is re-applied here against whatever meshes currently exist -
+   which means the overlay updates the moment a mesh is drawn or moved, with no
+   round-trip and no re-detection. A rejected focus is drawn hollow, so a badly
+   placed mesh silently dropping a bright signal becomes visible while editing.
+   Distance uses the capsule: distance to the midline minus the local half
+   width, which matches how the mesh mask is filled. */
+function focusAccepted(f){
+  const grow=(S.fociGrow??4);
+  const [ax,ay]=imageAlignVec();
+  const px=f.x+ax, py=f.y+ay;          // into the displayed (brightfield) frame
+  let best=Infinity;
+  for(const c of (S.cells||[])){
+    const m=c.mesh; if(!m||m.length<2) continue;
+    for(let i=0;i<m.length;i++){
+      const mx=(m[i][0]+m[i][2])/2, my=(m[i][1]+m[i][3])/2;
+      const hw=Math.hypot(m[i][2]-m[i][0], m[i][3]-m[i][1])/2;
+      const d=Math.hypot(px-mx,py-my)-hw;
+      if(d<best) best=d;
+    }
+  }
+  return best<=grow;
+}
+
+function drawFoci(){
+  // S.foci is always empty now (see loadFoci), so this returns immediately. The
+  // line below it read a control removed with the HADA overlay, which would have
+  // thrown on every single redraw.
+  if(!S.foci||!S.foci.length) return;
+  ctx.save();
+  ctx.translate(S.offsetX,S.offsetY); ctx.scale(S.scale,S.scale);
+  // Foci are detected in FLUORESCENCE coordinates; everything is displayed in
+  // brightfield coordinates now, so they get the same shift in every view.
+  const [fax,fay]=imageAlignVec();
+  ctx.translate(fax,fay);
+  ctx.lineWidth=1.6/S.scale;
+  let lost=0;
+  for(const f of S.foci){
+    const ok=focusAccepted(f);
+    if(!ok) lost++;
+    ctx.beginPath();
+    ctx.arc(f.x,f.y,4.5,0,Math.PI*2);
+    ctx.strokeStyle = ok ? '#00e5ff' : '#ff5a3c';
+    ctx.setLineDash(ok?[]:[3/S.scale,2/S.scale]);
+    ctx.stroke(); ctx.setLineDash([]);
+    if(ok){
+      ctx.beginPath(); ctx.arc(f.x,f.y,1.2,0,Math.PI*2);
+      ctx.fillStyle='#00e5ff'; ctx.fill();
+    }
+  }
+  S.fociLost=lost;
+  ctx.restore();
+}
+
+// ── Load / Save ────────────────────────────────────────────────────────────────
+async function loadSeries(idx){
+  // cache current state before switching
+  if(S.currentSeriesIdx>=0&&S.matPath){
+    S.seriesCache[S.matPath]={cells:JSON.parse(JSON.stringify(S.cells)),modified:S.modified};
+  }
+
+  const s=S.series[idx];
+  if(!s.phase){setStatus('No phase image for this series',true);return;}
+  setStatus('Loading…');
+  try{
+    const cached=S.seriesCache[s.mat];
+    // Pass mat only if it exists — backend handles missing mat gracefully
+    const matParam = s.has_mat ? `&mat=${encodeURIComponent(s.mat)}` : '';
+    const r=await fetch(`/api/load?phase=${encodeURIComponent(s.phase)}${matParam}`+`&mode=${S.displayMode||'septa'}`);
+    const d=await r.json();
+    if(d.error){setStatus(d.error,true);return;}
+
+    if(cached){
+      S.cells=cached.cells;S.modified=cached.modified;
+    } else {
+      S.cells=d.cells;S.modified=false;
+    }
+    S.imgW=d.width;S.imgH=d.height;
+    S.matPath=d.mat_path;S.phasePath=d.phase_path;
+    S.currentSeriesIdx=idx;S.undoStack=[];
+    S.selectedCell=-1;S.selectedHandle=null;
+
+    const phaseBlob=await fetch('data:image/png;base64,'+d.image).then(r=>r.blob());
+    S.phaseImg=await createImageBitmap(phaseBlob);
+
+    if(d.sum_image){
+      const sumBlob=await fetch('data:image/png;base64,'+d.sum_image).then(r=>r.blob());
+      S.sumImg=await createImageBitmap(sumBlob);
+      document.getElementById('noSumMsg').style.display='none';
+    } else {
+      S.sumImg=null;
+      if(S.view!=='phase') document.getElementById('noSumMsg').style.display='block';
+    }
+    S.sumPath=d.sum_path||null;
+    S.alignDx=d.align_dx||0; S.alignDy=d.align_dy||0;
+    const al=document.getElementById('alignInfo');
+    S.fociLost=0;
+    if(al) al.textContent=(S.alignDx||S.alignDy)
+      ? `channel offset dx=${S.alignDx} dy=${S.alignDy} px`
+      : 'channel offset: none detected';
+    S.foci=[];
+
+    fitView();renderSeriesList();renderCellList();updateCellStats();setModified(S.modified);
+    document.getElementById('headerInfo').textContent=s.name;
+    document.getElementById('cellCount').textContent=`${S.cells.length} cells`;
+    document.getElementById('saveBtn').disabled=false;
+    document.getElementById('saveAllBtn').disabled=false;
+    setStatus(`Loaded ${S.cells.length} cells${cached?' (cached)':''}`);
+  }catch(e){setStatus(e.message,true);}
+}
+
+async function saveCurrentMat(){
+  if(!S.matPath)return;
+  // update cache
+  S.seriesCache[S.matPath]={cells:JSON.parse(JSON.stringify(S.cells)),modified:false};
+  setStatus('Saving…');
+  try{
+    const r=await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({mat_path:S.matPath,cells:S.cells,height:S.imgH,width:S.imgW})});
+    const d=await r.json();
+    if(d.error){setStatus(d.error,true);return;}
+    setModified(false);renderSeriesList();
+    setStatus(`Saved ${d.n_cells} cells → ${S.matPath.split(/[\\/]/).pop()}`);
+  }catch(e){setStatus(e.message,true);}
+}
+
+async function saveAllModified(){
+  // Save current series to cache first
+  if(S.matPath) S.seriesCache[S.matPath]={cells:JSON.parse(JSON.stringify(S.cells)),modified:S.modified};
+
+  const toSave=S.series.filter(s=>S.seriesCache[s.mat]?.modified);
+  if(!toSave.length){setStatus('No unsaved changes');return;}
+  setStatus(`Saving ${toSave.length} series…`);
+  let saved=0,errors=0;
+  for(const s of toSave){
+    const cached=S.seriesCache[s.mat];
+    try{
+      const r=await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({mat_path:s.mat,cells:cached.cells,height:S.imgH,width:S.imgW})});
+      const d=await r.json();
+      if(d.ok){cached.modified=false;saved++;}
+      else errors++;
+    }catch(e){errors++;}
+  }
+  // update current display
+  if(S.matPath&&!S.seriesCache[S.matPath]?.modified) setModified(false);
+  renderSeriesList();
+  setStatus(errors?`Saved ${saved}, ${errors} errors`:`Saved ${saved} series`);
+}
+
+function deleteSelected(){
+  if(S.selectedCell<0)return;
+  saveUndo();S.cells.splice(S.selectedCell,1);
+  selectCell(-1);setModified(true);renderCellList();
+  document.getElementById('cellCount').textContent=`${S.cells.length} cells`;draw();
+}
+function saveUndo(){
+  S.undoStack.push(JSON.parse(JSON.stringify(S.cells)));
+  if(S.undoStack.length>30)S.undoStack.shift();
+  document.getElementById('undoBtn').disabled=false;
+}
+function undoLast(){
+  if(!S.undoStack.length)return;
+  S.cells=S.undoStack.pop();
+  if(!S.undoStack.length)document.getElementById('undoBtn').disabled=true;
+  setModified(true);renderCellList();updateCellStats();draw();
+}
+
+// ── Zoom / Fit ─────────────────────────────────────────────────────────────────
+function zoom(f){
+  const cx=canvasOv.width/2,cy=canvasOv.height/2;
+  S.offsetX=cx-(cx-S.offsetX)*f;S.offsetY=cy-(cy-S.offsetY)*f;S.scale*=f;draw();
+}
+function fitView(){
+  if(!S.phaseImg)return;
+  const pad=20;
+  S.scale=Math.min((canvasOv.width-pad*2)/S.imgW,(canvasOv.height-pad*2)/S.imgH);
+  S.offsetX=(canvasOv.width-S.imgW*S.scale)/2;
+  S.offsetY=(canvasOv.height-S.imgH*S.scale)/2;
+  draw();
+}
+
+// ── Folder picker ──────────────────────────────────────────────────────────────
+let pickerPath=null;
+async function openFolderPicker(){
+  // Try native Windows dialog first
+  const initial = document.getElementById('pathInput').value || 'C:/Users';
+  try {
+    const r = await fetch(`/api/browse_native?initial=${encodeURIComponent(initial)}`);
+    const d = await r.json();
+    if (d.path) {
+      document.getElementById('pathInput').value = d.path;
+      await loadExperimentFolder(d.path);
+      return;
+    }
+    // If cancelled or error, fall back to custom modal
+  } catch(e) {}
+  document.getElementById('folderModal').classList.add('show');
+  await browseTo(initial);
+}
+function closeModal(id){document.getElementById(id).classList.remove('show');}
+async function browseTo(path){
+  const r=await fetch(`/api/browse?path=${encodeURIComponent(path)}`);
+  const d=await r.json();if(d.error){setStatus(d.error,true);return;}
+  pickerPath=d.path;document.getElementById('currentPath').textContent=d.path;document.getElementById('pathInput').value=d.path;
+  const list=document.getElementById('fileList');list.innerHTML='';
+  if(d.parent!==d.path){const div=document.createElement('div');div.className='fe';div.innerHTML='<span class="icon">↑</span> ..';div.onclick=()=>browseTo(d.parent);list.appendChild(div);}
+  d.entries.forEach(e=>{const div=document.createElement('div');div.className='fe'+(e.isdir?'':' file');div.innerHTML=`<span class="icon">${e.isdir?'📁':'📄'}</span>${e.name}`;if(e.isdir)div.onclick=()=>browseTo(e.path);list.appendChild(div);});
+}
+async function selectFolder(){if(!pickerPath)return;closeModal('folderModal');await loadExperimentFolder(pickerPath);}
+async function loadExperimentFolder(folder){
+  setStatus('Scanning…');
+  // Walk the whole tree first, so a root holding many conditions
+  // (<root>/<timepoint>/<strain>/phase) opens in ONE session instead of one
+  // per strain. If a curation_list.txt sits at the root, load just those fields.
+  try{
+    const listPath=folder.replace(/[\/\\]$/,'')+'/curation_list.txt';
+    let r=await fetch(`/api/scan?root=${encodeURIComponent(folder)}&list=${encodeURIComponent(listPath)}`);
+    let series=await r.json();
+    if(!series.error&&series.length){
+      S.series=series;renderSeriesList();
+      const conds=new Set(series.map(s=>s.condition));
+      setStatus(`Curation list: ${series.length} fields across ${conds.size} conditions`);
+      const first=series.findIndex(s=>s.phase); if(first>=0)loadSeries(first);
+      return;
+    }
+    r=await fetch(`/api/scan?root=${encodeURIComponent(folder)}`);
+    series=await r.json();
+    if(!series.error&&series.length){
+      S.series=series;renderSeriesList();
+      const conds=new Set(series.map(s=>s.condition));
+      setStatus(`Found ${series.length} series across ${conds.size} conditions `+
+                `(${series.filter(s=>s.has_mat).length} with meshes)`);
+      const first=series.findIndex(s=>s.phase); if(first>=0)loadSeries(first);
+      return;
+    }
+  }catch(e){/* fall through to the single-condition path */}
+  if(await tryCondition(folder))return;
+  const r=await fetch(`/api/browse?path=${encodeURIComponent(folder)}`);
+  const d=await r.json();
+  for(const e of d.entries.filter(e=>e.isdir)){if(await tryCondition(e.path))return;}
+  setStatus('No brightfield images found: neither a phase/ folder nor snapshots beside the movies',true);
+}
+async function tryCondition(p){
+  // The server lists the condition's fields by the scan's own rule
+  // (editor_project.scan_fields): its phase/ folder, or the snapshots lying
+  // beside the movies. cell_meshes/ may not exist yet; it is created on save.
+  const sr=await fetch(`/api/series?condition=${encodeURIComponent(p)}`);
+  const series=await sr.json();
+  if(series.error||!series.length)return false;
+  S.series=series;renderSeriesList();
+  setStatus(`Found ${series.length} series (${series.filter(s=>s.has_mat).length} with meshes)`);
+  const first=series.findIndex(s=>s.phase);
+  if(first>=0)loadSeries(first);
+  return true;
+}
+
+function setModified(v){S.modified=v;document.getElementById('modBadge').style.display=v?'':'none';}
+function setStatus(msg,isErr=false){const el=document.getElementById('statusMsg');el.textContent=msg;el.className=isErr?'serr':'sok';}
+
+
+/* Phase display modes. One stretch cannot do both jobs: 'outline' keeps the
+   cell/background edge crisp but saturates the interior, so septa inside a
+   chain vanish; 'septa' maps min..background across the full range, which
+   spreads the cell's own dark values and makes the septal dip visible.
+   'imagej' is the faithful middle. Cycled with C. */
+const DISPLAY_MODES=['septa','outline','imagej'];
+const DISPLAY_HINT={imagej:'faithful (ImageJ-like)',
+                    outline:'punchy cell/background edge',
+                    septa:'dark range expanded - septa in chains'};
+async function cycleDisplayMode(){
+  const i=DISPLAY_MODES.indexOf(S.displayMode||'septa');
+  S.displayMode=DISPLAY_MODES[(i+1)%DISPLAY_MODES.length];
+  const s=S.series&&S.series[S.currentSeriesIdx];
+  if(!s){setStatus('display: '+S.displayMode);return;}
+  try{
+    const r=await fetch('/api/load_sum?path='+encodeURIComponent(s.phase)
+                        +'&mode='+S.displayMode);
+    const d=await r.json();
+    if(d.error){setStatus(d.error,true);return;}
+    const blob=await fetch('data:image/png;base64,'+d.image).then(r=>r.blob());
+    S.phaseImg=await createImageBitmap(blob);
+    drawBase();
+    setStatus('display: '+S.displayMode+' — '+DISPLAY_HINT[S.displayMode]);
+  }catch(err){setStatus('display switch failed: '+err,true);}
+}
+
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='INPUT')return;
+  if(e.key==='Delete'||e.key==='Backspace')deleteSelected();
+  if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();undoLast();}
+  if((e.ctrlKey||e.metaKey)&&e.key==='s'){e.preventDefault();saveCurrentMat();}
+  if(e.key==='s'||e.key==='S')setTool('select');
+  if(e.key==='d'||e.key==='D')setTool('draw');
+  if(e.key==='x'||e.key==='X')setTool('split');
+  if(e.key==='m'||e.key==='M')mergeSelected();
+  if(e.key==='c'||e.key==='C')cycleDisplayMode();
+  if(e.key==='a'||e.key==='A'){
+    const cb=document.getElementById('applyAlign');cb.checked=!cb.checked;drawMesh();
+  }
+  if(e.key==='1')setView('phase');
+  if(e.key==='2')setView('sum');
+  if(e.key==='3')setView('overlay');
+  if(e.key==='r'||e.key==='R')resetImageAdjust();
+  // [ ] nudge contrast without leaving the canvas
+  if(e.key==='['||e.key===']'){
+    const c=document.getElementById('imgContrast');
+    c.value=Math.min(400,Math.max(20,+c.value+(e.key===']'?15:-15)));
+    document.getElementById('imgContrastVal').textContent=c.value+'%';
+    drawBase();
+  }
+  if(e.key==='Escape'){
+    if(S.tool==='draw'&&S.drawStep>0){S.drawStep=0;S.drawP1=null;setHint('Click first pole to start');drawMesh();}
+    else{setTool('select');selectCell(-1);}
+  }
+  if(e.key==='ArrowRight'){const n=S.currentSeriesIdx+1;if(n<S.series.length)loadSeries(n);}
+  if(e.key==='ArrowLeft'){const n=S.currentSeriesIdx-1;if(n>=0)loadSeries(n);}
+});
+
+resizeCanvas();
+
+// THE --root ARGUMENT HAS TO DO SOMETHING. It reaches the page in the URL and,
+// without this, was read and then ignored — a parameter that is declared,
+// documented, passed and consumed by nothing, which is the defect this project has
+// recorded more than once. The picker still opens for anyone who did not pass one.
+if (START_ROOT) {
+  document.getElementById('pathInput').value = START_ROOT;
+  loadExperimentFolder(START_ROOT);
+}
+
+// ── TELL THE SERVER WE ARE STILL HERE, AND TELL IT WHEN WE GO ────────────────
+// A WINDOW HAS A CLOSE EVENT; A TAB DOES NOT, at least not one a server can rely
+// on. Without this the process outlived the editor: the tab was closed, the port
+// stayed open and the terminal kept running. Two mechanisms, because neither is
+// sufficient alone -- the beacon is fast but not guaranteed to arrive (a crashed
+// browser or a killed process sends nothing), and the heartbeat is guaranteed but
+// slow, since a BACKGROUND tab has its timers throttled to about once a minute.
+setInterval(() => { fetch('/api/alive').catch(() => {}); }, 5000);
+fetch('/api/alive').catch(() => {});
+addEventListener('pagehide', () => {
+  // sendBeacon, NOT fetch: the page is going away and an ordinary request is
+  // cancelled with it. `pagehide` rather than `unload`, which modern browsers may
+  // skip entirely when restoring a page from the back/forward cache.
+  const url = '/api/bye?token=' + encodeURIComponent(TOKEN);
+  if (navigator.sendBeacon) navigator.sendBeacon(url);
+  else fetch(url, {keepalive: true}).catch(() => {});
+});
+addEventListener('beforeunload', (e) => {
+  // Unsaved outlines are the one thing here that cannot be recovered: the .mat on
+  // disk is still the old one, and the edits live only in this tab.
+  if (S.modified) { e.preventDefault(); e.returnValue = ''; return ''; }
+});
+</script>
+</body>
+</html>
