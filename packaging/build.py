@@ -1172,6 +1172,19 @@ def verify(dist_dir=None, project=None, condition=None, prep_folder=None, varian
           f"exit {code}; repository at {head or '?'}; bundle says: "
           f"{(out or '').strip().splitlines()[0] if (out or '').strip() else 'nothing'}")
 
+    # HTTPS WORKS FROM THE BUNDLE (27 Nov 2026: on a lab Mac the packaged app's OpenSSL had no certificate list, so the
+    # segmentation pack, Cellpose-SAM's model and the updater could not download; `smtracker.netssl`): one request to
+    # GitHub through the program's own --check-updates. A certificate failure fails; no answer at all (no network) is
+    # said and skipped.
+    code, out = _run(cli, ["--check-updates"], timeout=60)
+    said = ((out or "").strip().splitlines() or ["nothing"])[-1]
+    if code == 0:
+        check("--check-updates reaches GitHub over HTTPS", True, said)
+    elif "CERTIFICATE" in (out or "").upper():
+        check("--check-updates reaches GitHub over HTTPS", False, said)
+    else:
+        print(f"  SKIP  --check-updates: no answer from GitHub (is there a network?): {said}")
+
     # BARE INVOCATION MUST NOT DIE. `smtracker` with no arguments is how a lab member
     # starts the shipped installer, and it once aborted at exit 127 having printed
     # nothing, because a QDialog was built before any QApplication existed. It opens a

@@ -212,6 +212,11 @@ def _build_parser() -> argparse.ArgumentParser:
              "with no tracks, images or results",
     )
     parser.add_argument(
+        "--check-updates", action="store_true",
+        help="ask GitHub at once for the newest release, print the answer (Help's Check for updates) and exit; "
+             "installs nothing. Exit 1 when the check did not work",
+    )
+    parser.add_argument(
         "--segment-check", nargs="?", const="", default=None, metavar="IMAGE",
         help="print which segmentation engines this build carries (classical, Cellpose, Omnipose), torch and "
              "CUDA; with IMAGE, also segment that one image through the windows' own code path (see --model, "
@@ -1043,6 +1048,11 @@ def _simulate_command(recipe_path: Path, out: Path) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     _use_utf8_console()
+    # HTTPS ON A MAC (27 Nov 2026): the packaged app's OpenSSL has no certificate list of its own there, so every
+    # download failed (the segmentation pack, Cellpose-SAM's model, the updater); `netssl` points it at one first.
+    from .netssl import use_bundled_certificates
+
+    use_bundled_certificates()
     args = _build_parser().parse_args(argv)
 
     if getattr(args, "simulate", None) is not None:
@@ -1054,6 +1064,15 @@ def main(argv: list[str] | None = None) -> int:
         print(crashlog.about_text())
         print(f"report written: {crashlog.report_bundle(args.report)}")
         return 0
+
+    if getattr(args, "check_updates", False):
+        # one HTTPS request to GitHub, the words Help shows (27 Nov 2026; also the quickest proof that a packaged
+        # app's downloads work on a machine, `netssl`)
+        from .updates import check_now
+
+        outcome = check_now()
+        print(outcome.words)
+        return 1 if outcome.kind == "failed" else 0
 
     if not (getattr(args, "version", False) or getattr(args, "formats", False)):
         # WHAT WENT WRONG IS WRITTEN DOWN (`smtracker.crashlog`): every uncaught error, Qt's own warnings and the

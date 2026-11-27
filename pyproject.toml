@@ -26,7 +26,7 @@ engines = ["saspt"]                     # native Python state inference (Phase 4
 # that `tifffile` already decodes, so it costs nothing. Optional because the analysis
 # spine runs on the CROPPED stacks and only the intensity/movie-prep paths need the raw.
 raw = ["nd2>=0.10", "tifffile"]
-ui = ["napari[pyside6]>=0.5", "tifffile", "matplotlib>=3.7", "openpyxl>=3.1", "markdown-it-py>=3"]  # viewer + inspector canvas, figure export (openpyxl: Source Data workbooks); PySide6 is LGPL (see packaging/build.py)
+ui = ["napari[pyside6]>=0.5", "certifi", "tifffile", "matplotlib>=3.7", "openpyxl>=3.1", "markdown-it-py>=3"]  # viewer + inspector canvas, figure export (openpyxl: Source Data workbooks); PySide6 is LGPL (see packaging/build.py)
 figures = ["matplotlib>=3.7"]           # scripts/figure_*.py only, not the spine
 packaging = ["pyinstaller>=6"]          # standalone build; see packaging/build.py
 dev = ["pytest>=7", "ruff", "mypy"]
