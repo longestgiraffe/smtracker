@@ -15,7 +15,8 @@ has torch (a CUDA build), torchvision and cellpose >= 4 and NOT omnipose. The va
 build_info.json (so `smtracker --version` says it) and in the zip's name.
 
 On Windows smtracker.exe is a WINDOWS app (no console; 27 Nov 2026) and smtracker-console.exe beside it is the same
-file asking for a console, for the commands (`console_twin`).
+file asking for a console, for the commands (`console_twin`). On a Mac the build is SMTracker.app (27 Nov 2026,
+`finish_app`, `Layout`), its command line Contents/MacOS/smtracker, and `--installer` makes a .pkg (`make_pkg`).
 
 Then smoke-test the result — this is the check that matters, because a build
 that *completes* is not a build that *runs*:
@@ -91,6 +92,19 @@ COLLECT_ALL = [
     "pyconify",             # icon sets, fetched through entry points
     "matplotlib",           # the inspector canvas (backend_qtagg)
 ]
+
+#: Collected whole WHERE INSTALLED: newer napari keeps its logos and icons in a package of their own,
+#: `napari_resources`, which it opens with importlib.resources, so the static scan misses its data. Found on the Mac
+#: build (27 Nov 2026, napari 0.10): `--selftest` failed with "No module named 'napari_resources.resources'". An
+#: environment without the package (an older napari) builds exactly as before.
+OPTIONAL_COLLECT_ALL = ["napari_resources"]
+
+
+def _present(packages) -> list:
+    import importlib.util
+
+    return [p for p in packages if importlib.util.find_spec(p) is not None]
+
 
 #: Never bundle these. PyQt5 is GPL and would relicense the whole application
 #: (see the module docstring); the others are Qt bindings we do not ship.
@@ -212,7 +226,8 @@ def build_command(*, variant: str = DEFAULT_VARIANT, dist=None, work=None, onefi
     # missing, so both are explicit rather than assumed to be collected.
     from smtracker.appicon import icon_path
 
-    executable_icon = icon_path(".ico")
+    # a Mac app's icon comes from the 512 px PNG (PyInstaller turns it into the .icns); Windows takes the .ico
+    executable_icon = icon_path(".png" if sys.platform == "darwin" else ".ico")
     if executable_icon is not None:
         command += ["--icon", str(executable_icon)]
     resources = REPO / "src" / "smtracker" / "resources"
@@ -258,13 +273,17 @@ def build_command(*, variant: str = DEFAULT_VARIANT, dist=None, work=None, onefi
         command.append("--clean")
     if os.name == "nt" and not onefile:
         # A WINDOWS APP: double-clicked, it opens its window and no console (`console_twin` makes the console
-        # program beside it). Only on Windows: on a Mac --windowed makes an .app bundle, another layout.
+        # program beside it). On a Mac --windowed makes the .app bundle, another layout (`mac_layout`, below).
         command.append("--windowed")
+    if sys.platform == "darwin" and not onefile:
+        # A MAC APP (27 Nov 2026): SMTracker.app, double-clicked from Applications with no Terminal window; the
+        # commands are typed as SMTracker.app/Contents/MacOS/smtracker --selftest. `finish_app` names it and stamps it.
+        command += ["--windowed", "--osx-bundle-identifier", MAC_BUNDLE_ID]
     if onefile:
         # Slower to start (it unpacks to a temp dir every launch) and harder to
         # debug; the installer will ship the folder build.
         command.append("--onefile")
-    for package in COLLECT_ALL:
+    for package in COLLECT_ALL + _present(OPTIONAL_COLLECT_ALL):
         command += ["--collect-all", package]
     # Belt-and-braces: pull in EVERY smtracker submodule, so the comparison-first
     # views (comparison, compare_plots, comparison_controller, warmcache, fastmode,
@@ -335,6 +354,162 @@ def console_twin(dist_dir=None) -> Path:
     twin = dist_dir / CONSOLE_NAME
     twin.write_bytes(bytes(data))
     return twin
+
+
+# ---------------------------------------------------------------------------------
+# THE MAC APP (27 Nov 2026, asked: "we need to build an installer for mac").
+# ---------------------------------------------------------------------------------
+#
+# On a Mac the folder build is `--windowed`, so PyInstaller makes an .app bundle, and the layout differs from Windows':
+#
+#   Windows: dist/smtracker/smtracker.exe, dist/smtracker/_internal/..., the licence files beside the program
+#   macOS:   dist/SMTracker.app/Contents/MacOS/smtracker (the program, which is also the command line),
+#            Contents/Frameworks/... (what _internal holds elsewhere; PyInstaller's sys._MEIPASS), and
+#            Contents/Resources/ (data, linked from Frameworks, and the licence files, README and source zip)
+#
+# `layout` answers where each part is, decided by the bundle's NAME (an .app or a folder), so a Windows bundle is read
+# exactly as before and the tests can build either kind on any machine. `finish_app` renames PyInstaller's
+# smtracker.app to SMTracker.app, writes the name and version into Info.plist, and `sign_app` signs it again ad-hoc
+# after the licence files went into Contents/Resources (an Apple-silicon Mac runs no code whose seal is broken).
+
+#: The bundle identifier, fixed for good (as the Windows installer's AppId): an install of a later version replaces the
+#: earlier one by it. Named after the public repository.
+MAC_BUNDLE_ID = "io.github.longestgiraffe.smtracker"
+MAC_APP = "SMTracker.app"
+
+
+class Layout:
+    """Where the parts of a bundle are: ``root`` is what ships (the folder, or the .app), ``binary`` the program,
+    ``cli`` the program commands are typed with, ``internal`` PyInstaller's support folder, ``legal`` the folder the
+    licence files, README and source go into."""
+
+    def __init__(self, bundle):
+        self.root = Path(bundle)
+        self.mac = self.root.suffix == ".app"
+        if self.mac:
+            contents = self.root / "Contents"
+            self.binary = contents / "MacOS" / "smtracker"
+            self.cli = self.binary
+            self.internal = contents / "Frameworks"
+            self.legal = contents / "Resources"
+        else:
+            self.binary = self.root / ("smtracker.exe" if os.name == "nt" else "smtracker")
+            self.cli = self.root / CONSOLE_NAME if os.name == "nt" else self.binary
+            self.internal = self.root / "_internal"
+            self.legal = self.root
+
+    @property
+    def info_path(self) -> Path:
+        return self.internal / "smtracker" / "build_info.json"
+
+    def info(self) -> dict:
+        return json.loads(self.info_path.read_text("utf-8")) if self.info_path.is_file() else {}
+
+
+def default_bundle(dist=None) -> Path:
+    """The bundle a build makes in ``dist`` (default packaging/dist): SMTracker.app on a Mac, else the folder."""
+    dist = Path(dist) if dist else HERE / "dist"
+    return dist / (MAC_APP if sys.platform == "darwin" else "smtracker")
+
+
+def layout(bundle=None) -> Layout:
+    return Layout(bundle or default_bundle())
+
+
+def finish_app(dist=None) -> Path:
+    """PyInstaller's ``smtracker.app`` becomes ``SMTracker.app`` with its name and version in Info.plist; the plain
+    folder PyInstaller also leaves (``dist/smtracker``, the same files once more) is removed, so the .app is the one
+    thing a later step can pick up."""
+    import plistlib
+
+    dist = Path(dist) if dist else HERE / "dist"
+    made, app = dist / "smtracker.app", dist / MAC_APP
+    if not made.is_dir():
+        raise RuntimeError(f"PyInstaller made no {made}")
+    # through a third name: a Mac's disk ignores case, so smtracker.app and SMTracker.app are ONE path, and removing
+    # "the old SMTracker.app" first would remove the app just made
+    passing = dist / "SMTracker-renaming.app"
+    if passing.exists():
+        shutil.rmtree(passing)
+    made.rename(passing)
+    if app.exists():
+        shutil.rmtree(app)
+    passing.rename(app)
+    if (dist / "smtracker").is_dir():
+        shutil.rmtree(dist / "smtracker")
+    lay = Layout(app)
+    info = lay.info()
+    plist_path = app / "Contents" / "Info.plist"
+    plist = plistlib.loads(plist_path.read_bytes())
+    version = info.get("version") or "0"
+    plist.update({"CFBundleName": "SMTracker", "CFBundleDisplayName": "SMTracker",
+                  "CFBundleShortVersionString": version, "CFBundleVersion": version,
+                  "NSHighResolutionCapable": True,
+                  "NSHumanReadableCopyright": "GNU General Public License v3 or later"})
+    minimum = bundle_min_macos(app)
+    if minimum:
+        plist["LSMinimumSystemVersion"] = minimum
+    plist_path.write_bytes(plistlib.dumps(plist))
+    return app
+
+
+def sign_app(app) -> None:
+    """Sign the .app again ad-hoc (no identity: an Apple Developer ID is paid). Its nested libraries keep the
+    signatures PyInstaller gave them; the outer seal covers Info.plist and Contents/Resources, which changed."""
+    done = subprocess.run(["codesign", "--force", "--sign", "-", str(app)], capture_output=True, text=True)
+    if done.returncode != 0:
+        raise RuntimeError(f"codesign failed: {done.stderr.strip()}")
+
+
+def _min_macos(path) -> tuple | None:
+    """The lowest macOS a Mach-O file loads on (its `minos`, read with vtool), or None for anything else."""
+    try:
+        got = subprocess.run(["vtool", "-show-build", str(path)], capture_output=True, text=True, timeout=30,
+                             check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    for line in got.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0] == "minos":
+            try:
+                return tuple(int(x) for x in parts[1].split("."))
+            except ValueError:
+                return None
+    return None
+
+
+def _mach_o_files(app):
+    for path in Path(app).rglob("*"):
+        if path.is_file() and not path.is_symlink():
+            with open(path, "rb") as handle:
+                magic = handle.read(4)
+            if magic in (b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xce\xfa\xed\xfe"):
+                yield path
+
+
+def bundle_min_macos(app, *, report=None) -> str:
+    """The oldest macOS the .app opens on: the NEWEST `minos` of any binary inside it (one library built for a newer
+    macOS is enough to stop it; on 15 Oct 2026 a build from Homebrew's Python needed macOS 26). ``report``, a dict,
+    receives every binary's minos."""
+    newest = None
+    for path in _mach_o_files(app):
+        minos = _min_macos(path)
+        if minos:
+            if report is not None:
+                report[path] = minos
+            newest = minos if newest is None or minos > newest else newest
+    if newest is None:
+        return ""
+    return ".".join(str(x) for x in (newest + (0,))[:max(2, len(newest))])
+
+
+def bundle_arch(app) -> str:
+    """The processor the .app's program is built for (``arm64``, ``x86_64``, or both joined by ``+``)."""
+    done = subprocess.run(["lipo", "-archs", str(Layout(app).binary)], capture_output=True, text=True)
+    archs = done.stdout.split()
+    if done.returncode != 0 or not archs:
+        raise RuntimeError(f"lipo could not read {Layout(app).binary}: {done.stderr.strip()}")
+    return "+".join(sorted(archs))
 
 
 def _require_normal_environment() -> None:
@@ -417,18 +592,19 @@ def bundled_top_levels(dist_dir) -> set:
     modules, and the packages and extension modules beside it in `_internal`."""
     from PyInstaller.archive.readers import CArchiveReader
 
-    dist_dir = Path(dist_dir)
+    lay = Layout(dist_dir)
     names = set()
-    archive = CArchiveReader(str(dist_dir / "smtracker.exe"))
+    # the program holding the archive: smtracker.exe, or on a Mac the .app's Contents/MacOS/smtracker
+    archive = CArchiveReader(str(lay.binary if lay.mac else Path(dist_dir) / "smtracker.exe"))
     for entry in archive.toc:
         if entry.upper().startswith("PYZ"):
             names |= {m.split(".")[0] for m in archive.open_embedded_archive(entry).toc}
-    internal = dist_dir / "_internal"
+    internal = lay.internal
     if internal.is_dir():
         for child in internal.iterdir():
             if child.is_dir() and not child.name.endswith((".dist-info", ".egg-info")):
                 names.add(child.name)
-            elif child.suffix == ".pyd":
+            elif child.suffix == ".pyd" or (lay.mac and child.suffix == ".so"):
                 names.add(child.name.split(".")[0])
     return names
 
@@ -534,9 +710,11 @@ def cuda_notice() -> list:
 LGPL_EXTENSIONS = ("fastremap", "fill-voids")
 
 
-def notices_text(dists, info: dict) -> str:
-    """THIRD-PARTY-NOTICES.txt: a list first (name, version, licence), then every text."""
+def notices_text(dists, info: dict, mac: bool = False) -> str:
+    """THIRD-PARTY-NOTICES.txt: a list first (name, version, licence), then every text. ``mac``: the .app's words
+    for where the libraries are (Contents/Frameworks, .so files) instead of Windows' (_internal, DLL and .pyd)."""
     rule = "=" * 79
+    where, kind, ext = ("SMTracker.app/Contents/Frameworks", "library", ".so") if mac else ("_internal", "DLL", ".pyd")
     python = sys.version.split()[0]
     lines = [f"SMTracker {info.get('version', '?')} (commit {info.get('commit') or '?'}): "
              "third-party software in this folder",
@@ -544,8 +722,8 @@ def notices_text(dists, info: dict) -> str:
              "SMTracker itself is licensed under the GNU General Public License, version 3 or",
              "later (LICENSE.txt); its source is in the folder 'source'. It contains the",
              "software below, each under its own licence. Qt is used under the GNU Lesser",
-             "General Public License v3 through PySide6; its libraries are the separate DLL",
-             "files in _internal/PySide6 and may be replaced. Qt's own third-party components",
+             f"General Public License v3 through PySide6; its libraries are the separate {kind}",
+             f"files in {where}/PySide6 and may be replaced. Qt's own third-party components",
              "are listed at https://doc.qt.io/qt-6/licenses-used-in-qt.html.",
              "",
              f"{'Package':<34} {'Version':<14} Licence"]
@@ -562,7 +740,7 @@ def notices_text(dists, info: dict) -> str:
                   "-" * 33,
                   f"{' and '.join(lgpl)} are licensed under the GNU Lesser General Public License v3 (texts below). "
                   "They are separate",
-                  "extension modules (.pyd files) in _internal, not linked into SMTracker's own files, so they can be "
+                  f"extension modules ({ext} files) in {where}, not linked into SMTracker's own files, so they can be "
                   "replaced by",
                   "a modified build of the same library. Their source is published by their authors (fastremap: "
                   "github.com/seung-lab/fastremap;",
@@ -595,8 +773,11 @@ def notices_text(dists, info: dict) -> str:
     return "\n".join(lines)
 
 
-def readme_text(info: dict) -> str:
-    """README.txt: how to start it, and where the licence, notices and source are."""
+def readme_text(info: dict, mac: bool = False) -> str:
+    """README.txt: how to start it, and where the licence, notices and source are. ``mac``: the Mac app's README
+    (`mac_readme_text`)."""
+    if mac:
+        return mac_readme_text(info)
     variant = info.get("variant", DEFAULT_VARIANT)
     # ONE build ships (ruled 26 Nov 2026 evening): the shipped README names no variant and tells of the pack.
     which = ({"lite": ["Segmenting cells with Cellpose-SAM, and training your own model, need PyTorch and",
@@ -637,20 +818,70 @@ def readme_text(info: dict) -> str:
         ""])
 
 
+def mac_readme_text(info: dict) -> str:
+    """README.txt of the Mac app: the installer, the app's command line, the "Open Anyway" of an unsigned app, removing
+    it, and where the licence, notices and source are."""
+    version, commit = info.get("version", "?"), info.get("commit") or "?"
+    return "\n".join([
+        f"SMTracker {version} for macOS (commit {commit}, built {str(info.get('built', '?'))[:10]})",
+        "",
+        "Single-molecule tracking analysis: from raw movies to diffusive-state fractions,",
+        "condition by condition.",
+        "",
+        "To install: open the installer (SMTracker-...-macos-....pkg) and follow it. It puts",
+        "SMTracker in Applications (for all users, which asks for your password) or in the",
+        "Applications folder of your home folder (for you only, no password). Under",
+        "Customize it offers what else to get, every choice off: the segmentation pack",
+        "(PyTorch and Cellpose, about 2.5 GB; also later, in the outlines window) and Fiji",
+        "with TrackMate (opens its download page). From the zip instead: drag",
+        "SMTracker.app into Applications.",
+        "",
+        "SMTracker keeps its settings in ~/.config/smtracker and its caches in ~/.cache,",
+        "and writes its own files (outlines, groupings, caches) beside your data.",
+        "",
+        "THE APP IS NOT SIGNED by an Apple Developer ID, so macOS stops it the first time:",
+        "\"SMTracker cannot be opened because Apple cannot check it for malicious software\"",
+        "(the same for the installer). Open System Settings > Privacy & Security, scroll",
+        "to Security and press Open Anyway beside SMTracker, then confirm. Or, in Terminal:",
+        "    xattr -cr /Applications/SMTracker.app",
+        "which removes the download mark macOS checks (use the folder you installed to).",
+        "",
+        "Tracking needs Fiji with TrackMate or MATLAB with u-track, installed separately.",
+        "The manual opens from Help in every window.",
+        "",
+        "SMTracker opens no Terminal window. For the commands, type in Terminal:",
+        "    /Applications/SMTracker.app/Contents/MacOS/smtracker --selftest",
+        "and look for \"analysis self-test: OK\". When something went wrong, Report a problem",
+        "in the menu (or the same program with --report) writes the zip to send.",
+        "",
+        "To remove SMTracker: drag SMTracker.app from Applications to the Trash. The settings,",
+        "the caches and a downloaded segmentation pack stay; remove the pack first in the",
+        "outlines window (Segmentation pack), or delete ~/Library/Application Support/",
+        "SMTracker/packs. The installer's receipt goes with",
+        f"    pkgutil --forget {MAC_BUNDLE_ID}",
+        "(add --volume ~ for an install for you only; sudo for one for all users).",
+        "",
+        "Licence: GNU General Public License v3 or later (LICENSE.txt). The source of this",
+        "build is in the folder 'source' (inside the app: SMTracker.app/Contents/Resources,",
+        "Show Package Contents in the Finder). The other software inside, and its licences,",
+        "are listed in THIRD-PARTY-NOTICES.txt.",
+        ""])
+
+
 def add_legal(dist_dir=None) -> list:
     """Write LICENSE.txt, THIRD-PARTY-NOTICES.txt, README.txt and the source zip beside the
     program; returns the paths written. Raises where the commit's source cannot be had: a
     copy without it must not go out."""
-    dist_dir = Path(dist_dir or (HERE / "dist" / "smtracker"))
-    info_path = dist_dir / "_internal" / "smtracker" / "build_info.json"
-    info = json.loads(info_path.read_text("utf-8")) if info_path.is_file() else build_info()
+    lay = layout(dist_dir)
+    dist_dir = lay.legal                 # the folder itself; in a Mac app, Contents/Resources
+    info = lay.info() or build_info()
     commit = info.get("commit") or _git("rev-parse", "--short", "HEAD")
     if not commit:
         raise RuntimeError("no commit to take the source from: the copy would ship without its source")
     written = [dist_dir / LICENSE_NAME, dist_dir / NOTICES_NAME, dist_dir / README_NAME]
     shutil.copyfile(REPO / "GPL-License.txt", written[0])
-    written[1].write_text(notices_text(bundled_distributions(dist_dir), info), encoding="utf-8")
-    written[2].write_text(readme_text(info), encoding="utf-8")
+    written[1].write_text(notices_text(bundled_distributions(lay.root), info, mac=lay.mac), encoding="utf-8")
+    written[2].write_text(readme_text(info, mac=lay.mac), encoding="utf-8")
     source_dir = dist_dir / SOURCE_DIR
     source_dir.mkdir(exist_ok=True)
     for old in source_dir.glob("smtracker-*-source.zip"):
@@ -703,8 +934,44 @@ def _folder_size_mb(path) -> float:
     return sum(f.stat().st_size for f in Path(path).rglob("*") if f.is_file()) / 1e6
 
 
+def verify_mac_app(lay: Layout, check, macos_target=None) -> None:
+    """The checks only a Mac app needs: its name and version in Info.plist, an intact ad-hoc seal (an Apple-silicon
+    Mac refuses code whose signature is broken, and adding a file to Contents/Resources breaks it), the processor, and
+    the oldest macOS it opens on, held to ``macos_target`` where one is given."""
+    import plistlib
+
+    plist_path = lay.root / "Contents" / "Info.plist"
+    plist = plistlib.loads(plist_path.read_bytes()) if plist_path.is_file() else {}
+    version = lay.info().get("version")
+    check("Info.plist names SMTracker, its version and its fixed identifier",
+          plist.get("CFBundleName") == "SMTracker" and plist.get("CFBundleIdentifier") == MAC_BUNDLE_ID
+          and plist.get("CFBundleShortVersionString") == version and plist.get("CFBundleExecutable") == "smtracker",
+          f"{ {k: plist.get(k) for k in ('CFBundleName', 'CFBundleIdentifier', 'CFBundleShortVersionString')} }")
+    done = subprocess.run(["codesign", "--verify", "--deep", "--strict", str(lay.root)], capture_output=True,
+                          text=True)
+    check("the app's ad-hoc signature is intact (codesign --verify --deep --strict)", done.returncode == 0,
+          done.stderr.strip()[-300:])
+    try:
+        print(f"  processor: {bundle_arch(lay.root)}")
+    except RuntimeError as exc:
+        check("lipo reads the program's processor", False, str(exc))
+    report = {}
+    minimum = bundle_min_macos(lay.root, report=report)
+    print(f"  opens on macOS {minimum or '?'} and later (the newest minos of {len(report)} binaries)")
+    check("Info.plist's LSMinimumSystemVersion is the bundle's own minimum",
+          plist.get("LSMinimumSystemVersion") == minimum, f"plist {plist.get('LSMinimumSystemVersion')}, "
+          f"binaries {minimum}")
+    if macos_target:
+        target = tuple(int(x) for x in str(macos_target).split("."))
+        too_new = {p: v for p, v in report.items() if v > target}
+        check(f"every binary loads on macOS {macos_target}", not too_new,
+              f"{len(too_new)} need newer, e.g. " + ", ".join(
+                  f"{p.relative_to(lay.root)} ({'.'.join(map(str, v))})" for p, v in sorted(too_new.items())[:3])
+              if too_new else "")
+
+
 def verify(dist_dir=None, project=None, condition=None, prep_folder=None, variant=None,
-           segment_image=None) -> int:
+           segment_image=None, macos_target=None) -> int:
     """Check the frozen bundle. Returns 0 when every check passes.
 
     `project` and `condition` enable the `--dry-run` check, which is the one that
@@ -723,11 +990,13 @@ def verify(dist_dir=None, project=None, condition=None, prep_folder=None, varian
     by re-launching its own executable, so this is the only check here that a pool works
     inside the bundle -- and, given an .nd2 and an .stk, that both raw readers shipped.
     """
-    dist_dir = Path(dist_dir or (HERE / "dist" / "smtracker"))
-    binary = dist_dir / ("smtracker.exe" if os.name == "nt" else "smtracker")
+    lay = layout(dist_dir)
+    dist_dir = lay.root
+    binary = lay.binary
     # THE COMMANDS run through the console program on Windows (`console_twin`), as a lab member types them; the
     # Windows app itself is checked by the bare start, a command with nowhere to print, and its own worker pool.
-    cli = dist_dir / CONSOLE_NAME if os.name == "nt" else binary
+    # In a Mac app the program is the command line too (Contents/MacOS/smtracker).
+    cli = lay.cli
     failures = []
 
     def check(name, ok, detail=""):
@@ -746,7 +1015,9 @@ def verify(dist_dir=None, project=None, condition=None, prep_folder=None, varian
               and cli.stat().st_size == binary.stat().st_size, f"subsystems {kinds}")
         if not cli.is_file():
             return 1
-    stamp = dist_dir / "_internal" / "smtracker" / "build_info.json"
+    if lay.mac:
+        verify_mac_app(lay, check, macos_target)
+    stamp = lay.info_path
     stamped = json.loads(stamp.read_text("utf-8")).get("variant") if stamp.is_file() else None
     variant = variant or stamped or DEFAULT_VARIANT
     check("the bundle's own build_info names the variant verified", stamped == variant,
@@ -756,7 +1027,7 @@ def verify(dist_dir=None, project=None, condition=None, prep_folder=None, varian
     size = _folder_size_mb(dist_dir)
     print(f"  bundle is {size:.0f} MB")
 
-    internal = dist_dir / "_internal"
+    internal = lay.internal
     bindings = sorted(p.name for p in internal.iterdir()
                       if p.is_dir() and p.name in {"PySide6", "PyQt5", "PyQt6",
                                                    "PySide2"}) if internal.is_dir() else []
@@ -813,15 +1084,16 @@ def verify(dist_dir=None, project=None, condition=None, prep_folder=None, varian
               f"found {sorted(faces) or 'nothing'} in {font_dir}")
 
     # THE LICENCES, THE NOTICES AND THE SOURCE (`add_legal`): a copy given to another lab must carry them.
-    licence = dist_dir / LICENSE_NAME
+    legal = lay.legal                    # beside the program; in a Mac app, Contents/Resources
+    licence = legal / LICENSE_NAME
     check("the GPL ships beside the program (LICENSE.txt)", licence.is_file()
           and "GNU GENERAL PUBLIC LICENSE" in licence.read_text("utf-8", errors="replace")[:200])
-    notices = dist_dir / NOTICES_NAME
+    notices = legal / NOTICES_NAME
     notice_text = notices.read_text("utf-8", errors="replace") if notices.is_file() else ""
     check("the third-party notices name Qt's licence and carry the LGPL text",
           "PySide6" in notice_text and "GNU LESSER GENERAL PUBLIC LICENSE" in notice_text,
           "" if notice_text else f"no {NOTICES_NAME}")
-    sources = sorted((dist_dir / SOURCE_DIR).glob("smtracker-*-source.zip"))
+    sources = sorted((legal / SOURCE_DIR).glob("smtracker-*-source.zip"))
     names = []
     if len(sources) == 1:
         import zipfile
@@ -832,7 +1104,7 @@ def verify(dist_dir=None, project=None, condition=None, prep_folder=None, varian
           any(n.endswith("src/smtracker/__init__.py") for n in names)
           and any(n.endswith("packaging/build.py") for n in names),
           f"found {[s.name for s in sources] or 'nothing'}")
-    check("README.txt says how to start it", (dist_dir / README_NAME).is_file())
+    check("README.txt says how to start it", (legal / README_NAME).is_file())
 
     code, out = _run(cli, ["--selftest"])
     check("--selftest exits 0", code == 0, f"exit {code}")
@@ -994,7 +1266,10 @@ def main() -> int:
     parser.add_argument("--installer", action="store_true",
                         help="after every check passes, make the installer beside the bundle: on Windows "
                              "SMTracker-<version>-<commit>-setup.exe with Inno Setup 6 (packaging/smtracker.iss), "
-                             "on a Mac a .dmg")
+                             "on a Mac SMTracker-<version>-<commit>-macos-<arch>.pkg (pkgbuild and productbuild)")
+    parser.add_argument("--macos-target", metavar="VERSION", default=None,
+                        help="a Mac: fail the verify unless every binary in the app loads on this macOS (e.g. 13.0). "
+                             "The build environment must hold wheels for it: this checks, it cannot fix")
     parser.add_argument("--iscc", type=Path, default=None,
                         help=f"Inno Setup's compiler ISCC.exe, where it is not found by itself (also ${ISCC_ENV})")
     parser.add_argument("--project", help="a real project root, to enable --dry-run")
@@ -1004,7 +1279,8 @@ def main() -> int:
                              ".stk) and no saved curves, to enable --selftest-prep")
     args = parser.parse_args()
 
-    dist_dir = (args.dist / "smtracker") if args.dist else None
+    mac_app = sys.platform == "darwin" and not args.onefile
+    dist_dir = default_bundle(args.dist) if (args.dist or mac_app) else None
     if not args.verify_only:
         code = build(variant=args.variant, dist=args.dist, work=args.work, onefile=args.onefile,
                      clean=args.clean)
@@ -1012,18 +1288,24 @@ def main() -> int:
             return code
         if os.name == "nt" and not args.onefile:
             print(f"writing the console program: {console_twin(dist_dir)}")
+        if mac_app:
+            print(f"naming and stamping the app: {finish_app(args.dist)}")
         print("adding the licences, the notices and the source")
         add_legal(dist_dir)
+        if mac_app:
+            print("signing the app again (ad-hoc), its Resources having changed")
+            sign_app(dist_dir)
         if args.no_verify:
             return 0
     code = verify(dist_dir, project=args.project, condition=args.condition,
-                  prep_folder=args.prep_folder, variant=args.variant, segment_image=args.segment_image)
+                  prep_folder=args.prep_folder, variant=args.variant, segment_image=args.segment_image,
+                  macos_target=args.macos_target)
     artifacts = []
     if code == 0 and args.zip:
         artifacts.append(zip_bundle(dist_dir))
         print(f"zipped: {artifacts[-1]}")
     if code == 0 and args.installer:
-        artifacts.append(make_dmg(dist_dir) if sys.platform == "darwin" else compile_installer(dist_dir, iscc=args.iscc))
+        artifacts.append(make_pkg(dist_dir) if sys.platform == "darwin" else compile_installer(dist_dir, iscc=args.iscc))
         print(f"installer: {artifacts[-1]}")
     if artifacts:
         print(f"checksums: {write_sums(artifacts)}")
@@ -1037,8 +1319,8 @@ def main() -> int:
 #
 # Windows: Inno Setup 6 compiles `packaging/smtracker.iss`, every value passed with /D (`installer_command`): one
 # user, no administrator, Start menu and uninstaller, the GPL page, and what else to get (the segmentation pack through
-# the program's own command, Fiji's download page), every choice off. A Mac: a .dmg holding the bundle folder and a
-# link to Applications (`make_dmg`), made with the Mac's own hdiutil; NOT yet run on a Mac.
+# the program's own command, Fiji's download page), every choice off. A Mac: a .pkg made with the Mac's own pkgbuild
+# and productbuild (`make_pkg`, below), offering the same in the Mac's way.
 
 #: Where ISCC.exe is named when it is not on PATH or in Inno Setup's own folders.
 ISCC_ENV = "SMTRACKER_ISCC"
@@ -1061,7 +1343,7 @@ def find_iscc(given=None) -> Path:
 
 def _version_and_commit(dist_dir: Path) -> tuple:
     """The bundle's own version and commit (``-edits`` when built from uncommitted changes), from build_info.json."""
-    info = json.loads((Path(dist_dir) / "_internal" / "smtracker" / "build_info.json").read_text("utf-8"))
+    info = json.loads(Layout(dist_dir).info_path.read_text("utf-8"))
     return (info.get("version") or "0"), (info.get("commit") or "unknown") + ("-edits" if info.get("dirty") else "")
 
 
@@ -1099,21 +1381,285 @@ def compile_installer(dist_dir=None, iscc=None) -> Path:
     return made
 
 
-def make_dmg(dist_dir=None) -> Path:
-    """A Mac's disk image: the bundle folder as "SMTracker" beside a link to /Applications, compressed (UDZO)."""
-    dist_dir = Path(dist_dir or (HERE / "dist" / "smtracker"))
-    version, commit = _version_and_commit(dist_dir)
-    staging = dist_dir.parent / "dmg-staging"
-    if staging.exists():
-        shutil.rmtree(staging)
-    shutil.copytree(dist_dir, staging / "SMTracker", symlinks=True)
-    os.symlink("/Applications", staging / "Applications")
-    out = dist_dir.parent / f"SMTracker-{version}-{commit}.dmg"
-    code = subprocess.call(["hdiutil", "create", "-volname", f"SMTracker {version}",
-                            "-srcfolder", str(staging), "-ov", "-format", "UDZO", str(out)])
-    shutil.rmtree(staging)
-    if code != 0:
-        raise SystemExit(f"hdiutil stopped with exit {code}")
+# THE MAC INSTALLER (27 Nov 2026): what the Windows installer offers, in the Mac's way. One .pkg (productbuild) holds
+# four packages, each a CHOICE on the Installation Type page (`customize="always"` opens it), every extra OFF:
+#
+#   app      SMTracker.app into /Applications, or ~/Applications for "me only" (no password; the Windows installer's
+#            one user, no administrator). Required. Not relocatable: an SMTracker.app elsewhere on the disk (a build
+#            folder) is never "upgraded" in its place.
+#   segpack  the segmentation pack: opens a Terminal window running the app's OWN `--segmentation-pack install`, so the
+#            progress is seen, ending with "press Return to close" (Windows: a console that pauses). Where no pack
+#            exists for this Mac (an Intel processor, or a macOS older than the pack's wheels need) it says so there.
+#   fiji     Fiji with TrackMate: opens `fiji.FIJI_WEBSITE`.
+#   start    open SMTracker when the installer finishes (Windows: "Start SMTracker" on the last page).
+#
+# The extras are payload-free packages whose postinstall scripts act as the LOGGED-IN USER, never as root (the
+# installer runs them as root for an all-users install): the user at the screen (`stat -f%Su /dev/console`) through
+# `launchctl asuser` and `sudo -u`, so the pack lands in that user's folder and is remembered in that user's settings.
+# A Terminal window is opened by handing it a .command file (`open -a Terminal`), which needs no permission to
+# control another app. A script never fails the install: what it could not do it says, and it exits 0.
+#
+# No desktop shortcut: a Mac app is started from Applications, Launchpad or the Dock. Every value (version, commit,
+# processor, oldest macOS, Fiji's page, the pack's oldest macOS) is PASSED IN from the bundle and the package.
+# Uninstalling is dragging SMTracker.app to the Trash; settings, caches and a pack stay (README.txt).
+
+MAC_CHOICES = ("app", "segpack", "fiji", "start")
+
+
+def pkg_name(app, arch: str | None = None) -> str:
+    """``SMTracker-<version>-<commit>-macos-<arch>.pkg``, the processor read from the app's program unless given."""
+    version, commit = _version_and_commit(app)
+    return f"SMTracker-{version}-{commit}-macos-{arch or bundle_arch(app)}.pkg"
+
+
+def pack_min_macos(spec=None) -> str:
+    """The oldest macOS the Apple-silicon segmentation pack's wheels load on: the newest ``macosx_<major>_<minor>`` tag
+    among them (`segpack_spec.SPEC`), or "" where no Mac pack is pinned."""
+    import re
+
+    if spec is None:
+        from smtracker.segpack_spec import SPEC as spec
+    newest = None
+    for wheels in (spec.get("mac-arm64") or {}).values():
+        for wheel in wheels:
+            found = re.search(r"macosx_(\d+)_(\d+)_", wheel["filename"])
+            if found:
+                version = (int(found.group(1)), int(found.group(2)))
+                newest = version if newest is None or version > newest else newest
+    return f"{newest[0]}.{newest[1]}" if newest else ""
+
+
+def mac_values(app) -> dict:
+    """Every value the installer's texts and scripts use, read from the app and the package, never typed there."""
+    from smtracker.fiji import FIJI_WEBSITE
+    from smtracker.manual import SITE_URL
+
+    version, commit = _version_and_commit(app)
+    arch = bundle_arch(app)
+    return {"version": version, "commit": commit, "arch": arch,
+            "min_macos": bundle_min_macos(app) or "13.0", "bundle_id": MAC_BUNDLE_ID, "app_name": MAC_APP,
+            "fiji_url": FIJI_WEBSITE, "site_url": SITE_URL, "pack_min_macos": pack_min_macos()}
+
+
+def _xml(text) -> str:
+    from xml.sax.saxutils import escape
+
+    return escape(str(text), {'"': "&quot;"})
+
+
+def distribution_xml(values: dict) -> str:
+    """productbuild's distribution file: the welcome, README and licence pages, who may install where, the processor
+    and oldest macOS, and the four choices (every extra off)."""
+    v = {k: _xml(x) for k, x in values.items()}
+    host = ",".join(a for a in values["arch"].split("+"))
+    pack = (f"Needs an Apple-silicon Mac with macOS {values['pack_min_macos']} or later; elsewhere the window says so."
+            if values.get("pack_min_macos") else "No pack is made for a Mac; the window says so.")
+    choices = {
+        "app": ("SMTracker", f"SMTracker {values['version']} (build {values['commit']}), the application.", True, False),
+        "segpack": ("Segmentation pack (about 2.5 GB)",
+                    "PyTorch and Cellpose for Cellpose-SAM segmentation and training, downloaded after the "
+                    "installation in a Terminal window that shows the progress. Also later, in the outlines "
+                    f"window. {pack}", False, True),
+        "fiji": ("Fiji with TrackMate", "For tracking: opens Fiji's download page in your browser.", False, True),
+        "start": ("Open SMTracker at the end", "Starts SMTracker when the installer finishes.", False, True),
+    }
+    lines = ['<?xml version="1.0" encoding="utf-8"?>',
+             '<installer-gui-script minSpecVersion="2">',
+             f'    <title>SMTracker {v["version"]}</title>',
+             '    <welcome file="welcome.txt" mime-type="text/plain"/>',
+             '    <readme file="README.txt" mime-type="text/plain"/>',
+             '    <license file="LICENSE.txt" mime-type="text/plain"/>',
+             f'    <options customize="always" require-scripts="false" hostArchitectures="{host}"/>',
+             '    <domains enable_anywhere="false" enable_currentUserHome="true" enable_localSystem="true"/>',
+             '    <volume-check>',
+             '        <allowed-os-versions>',
+             f'            <os-version min="{v["min_macos"]}"/>',
+             '        </allowed-os-versions>',
+             '    </volume-check>',
+             '    <choices-outline>']
+    lines += [f'        <line choice="{name}"/>' for name in MAC_CHOICES]
+    lines += ['    </choices-outline>']
+    for name in MAC_CHOICES:
+        title, description, selected, enabled = choices[name]
+        lines += [f'    <choice id="{name}" title="{_xml(title)}" description="{_xml(description)}" '
+                  f'start_selected="{str(selected).lower()}" enabled="{str(enabled).lower()}">',
+                  f'        <pkg-ref id="{_pkg_id(values, name)}"/>',
+                  '    </choice>']
+    for name in MAC_CHOICES:
+        lines.append(f'    <pkg-ref id="{_pkg_id(values, name)}" version="{v["version"]}" onConclusion="none">'
+                     f'{name}.pkg</pkg-ref>')
+    lines += ['</installer-gui-script>', '']
+    return "\n".join(lines)
+
+
+def _pkg_id(values, name) -> str:
+    return values["bundle_id"] if name == "app" else f"{values['bundle_id']}.{name}"
+
+
+def welcome_text(values: dict) -> str:
+    return "\n".join([
+        f"SMTracker {values['version']} (build {values['commit']})",
+        "",
+        "Single-molecule tracking analysis: from raw movies to diffusive-state fractions, condition by condition.",
+        "",
+        "This installs SMTracker.app: in Applications for all users (asks for your password) or in your own "
+        "Applications folder (for you only, no password).",
+        "",
+        "Installation Type shows what else to get, every choice off: the segmentation pack (PyTorch and Cellpose, "
+        "about 2.5 GB), Fiji with TrackMate (its download page), and opening SMTracker at the end. MATLAB with "
+        "u-track is licensed and installed separately.",
+        "",
+        "Removing SMTracker later is dragging it from Applications to the Trash: your settings, caches and a "
+        "downloaded pack stay.",
+        "",
+        f"Licence: GNU General Public License v3 or later. Website: {values['site_url']}",
+        ""])
+
+
+#: The common head of every postinstall script: who is at the screen, and how to act as that user.
+_SCRIPT_HEAD = r"""#!/bin/bash
+# SMTracker {version} (build {commit}): the installer's "{choice}" choice. Generated by packaging/build.py, every value
+# passed in. Acts as the user logged in at the screen, never as root, and never fails the installation.
+CONSOLE_USER=$(stat -f%Su /dev/console)
+if [ -z "$CONSOLE_USER" ] || [ "$CONSOLE_USER" = "root" ] || [ "$CONSOLE_USER" = "loginwindow" ]; then
+    echo "SMTracker {choice}: nobody is logged in at the screen; skipped"
+    exit 0
+fi
+CONSOLE_UID=$(id -u "$CONSOLE_USER")
+CONSOLE_HOME=$(dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory | awk '{{print $2}}')
+as_user() {{
+    if [ "$(id -u)" = "0" ]; then
+        launchctl asuser "$CONSOLE_UID" sudo -u "$CONSOLE_USER" "$@"
+    else
+        "$@"
+    fi
+}}
+# where the app was put: the install's own folder ($2: / for all users, the home folder for "me only"), else either
+APP=""
+for candidate in "${{2%/}}/Applications/{app_name}" "$CONSOLE_HOME/Applications/{app_name}" "/Applications/{app_name}"; do
+    if [ -z "$APP" ] && [ -x "$candidate/Contents/MacOS/smtracker" ]; then
+        APP="$candidate"
+    fi
+done
+echo "SMTracker {choice}: user $CONSOLE_USER, app ${{APP:-not found}}"
+"""
+
+_SCRIPT_BODIES = {
+    "fiji": r"""as_user open {fiji_url_q} || echo "SMTracker fiji: the page could not be opened: {fiji_url}"
+exit 0
+""",
+    "start": r"""if [ -n "$APP" ]; then
+    as_user open "$APP" || echo "SMTracker start: the app could not be opened"
+fi
+exit 0
+""",
+    "segpack": r"""# a .command file opens in Terminal by itself, so this needs no permission to control another app
+WINDOW=$(mktemp "/tmp/smtracker-segmentation-pack.XXXXXX") || exit 0
+mv "$WINDOW" "$WINDOW.command" && WINDOW="$WINDOW.command"
+{{
+    echo '#!/bin/bash'
+    printf 'APP=%q\n' "$APP"
+    cat <<'WINDOW_BODY'
+clear
+echo "SMTracker {version}: the segmentation pack (PyTorch and Cellpose, about 2.5 GB)"
+echo
+PACK_MIN={pack_min_macos_q}
+HERE_OS=$(sw_vers -productVersion)
+at_least() {{ awk -v a="$1" -v b="$2" 'BEGIN {{ split(a, x, "."); split(b, y, "."); exit !((x[1] > y[1]) || (x[1] == y[1] && x[2] + 0 >= y[2] + 0)) }}'; }}
+if [ "$(uname -m)" != "arm64" ]; then
+    echo "No segmentation pack is made for this Mac: it has an Intel processor, and the pack"
+    echo "exists for Apple silicon only. SMTracker works without it (the classical segmenter)."
+elif [ -z "$PACK_MIN" ]; then
+    echo "No segmentation pack is pinned for a Mac in this version of SMTracker."
+    echo "SMTracker works without it (the classical segmenter)."
+elif ! at_least "$HERE_OS" "$PACK_MIN"; then
+    echo "The segmentation pack needs macOS $PACK_MIN or later (PyTorch and OpenCV are built for it);"
+    echo "this Mac runs macOS $HERE_OS. SMTracker works without it (the classical segmenter)."
+elif [ -z "$APP" ]; then
+    echo "SMTracker.app was not found in Applications, so the pack could not be fetched."
+    echo "Open SMTracker and use Segmentation pack in the outlines window."
+else
+    "$APP/Contents/MacOS/smtracker" --segmentation-pack install
+    status=$?
+    echo
+    if [ $status -eq 0 ]; then echo "The segmentation pack is installed."; else echo "The pack stopped (exit $status): what it said is above. Run it again from the outlines window; a download continues where it stopped."; fi
+fi
+echo
+read -r -p "Press Return to close this window. " _
+rm -f "$0"
+WINDOW_BODY
+}} > "$WINDOW"
+chmod 755 "$WINDOW"
+chown "$CONSOLE_USER" "$WINDOW" 2>/dev/null
+as_user open -a Terminal "$WINDOW" || echo "SMTracker segpack: Terminal could not be opened"
+exit 0
+""",
+}
+
+
+def postinstall_script(choice: str, values: dict) -> str:
+    """The postinstall script of one extra choice (fiji, start, segpack), with every value filled in."""
+    import shlex
+
+    if choice not in _SCRIPT_BODIES:
+        raise ValueError(f"no script for the choice {choice!r}")
+    filled = dict(values, choice=choice, fiji_url_q=shlex.quote(values["fiji_url"]),
+                  pack_min_macos_q=shlex.quote(values.get("pack_min_macos") or ""))
+    return (_SCRIPT_HEAD + _SCRIPT_BODIES[choice]).format(**filled)
+
+
+def _component_plist() -> bytes:
+    import plistlib
+
+    return plistlib.dumps([{"RootRelativeBundlePath": MAC_APP, "BundleIsRelocatable": False,
+                            "BundleIsVersionChecked": False, "BundleHasStrictIdentifier": True,
+                            "BundleOverwriteAction": "upgrade"}])
+
+
+def make_pkg(app=None, out_dir=None) -> Path:
+    """The Mac installer, ``SMTracker-<version>-<commit>-macos-<arch>.pkg``, beside the app (or in ``out_dir``)."""
+    app = Path(app or default_bundle())
+    lay = Layout(app)
+    if not lay.mac:
+        raise RuntimeError(f"{app} is not a Mac app")
+    values = mac_values(app)
+    out_dir = Path(out_dir) if out_dir else app.parent
+    work = out_dir / "pkg-work"
+    if work.exists():
+        shutil.rmtree(work)
+    root, packages, resources = work / "root", work / "packages", work / "resources"
+    for folder in (root, packages, resources):
+        folder.mkdir(parents=True)
+
+    def run(command):
+        done = subprocess.run([str(c) for c in command], capture_output=True, text=True)
+        if done.returncode != 0:
+            raise SystemExit(f"{command[0]} stopped with exit {done.returncode}: {done.stderr.strip()}")
+
+    run(["ditto", app, root / MAC_APP])                # ditto keeps the signatures, links and modes
+    (work / "component.plist").write_bytes(_component_plist())
+    run(["pkgbuild", "--root", root, "--component-plist", work / "component.plist", "--identifier",
+         values["bundle_id"], "--version", values["version"], "--install-location", "/Applications",
+         packages / "app.pkg"])
+    for choice in MAC_CHOICES[1:]:
+        scripts = work / f"scripts-{choice}"
+        scripts.mkdir()
+        script = scripts / "postinstall"
+        script.write_text(postinstall_script(choice, values), encoding="utf-8", newline="\n")
+        script.chmod(0o755)
+        run(["pkgbuild", "--nopayload", "--scripts", scripts, "--identifier", _pkg_id(values, choice),
+             "--version", values["version"], "--install-location", "/", packages / f"{choice}.pkg"])
+    shutil.copyfile(lay.legal / LICENSE_NAME, resources / LICENSE_NAME)
+    shutil.copyfile(lay.legal / README_NAME, resources / README_NAME)
+    (resources / "welcome.txt").write_text(welcome_text(values), encoding="utf-8")
+    (work / "distribution.xml").write_text(distribution_xml(values), encoding="utf-8")
+    out = out_dir / pkg_name(app, values["arch"])
+    if out.exists():
+        out.unlink()
+    run(["productbuild", "--distribution", work / "distribution.xml", "--resources", resources,
+         "--package-path", packages, out])
+    shutil.rmtree(work)
+    print(f"  {out.stat().st_size / 1e6:.0f} MB")
     return out
 
 
@@ -1137,17 +1683,41 @@ def write_sums(artifacts, folder=None) -> Path:
 def zip_bundle(dist_dir=None) -> Path:
     """The verified bundle as ONE zip named after the commit and the day, so the copy on
     another machine still says which code it is before anyone opens it."""
-    dist_dir = Path(dist_dir or (HERE / "dist" / "smtracker"))
-    info_path = dist_dir / "_internal" / "smtracker" / "build_info.json"
-    info = json.loads(info_path.read_text("utf-8")) if info_path.is_file() else {}
+    lay = layout(dist_dir)
+    dist_dir = lay.root
+    info = lay.info()
     commit = (info.get("commit") or "unknown") + ("-edits" if info.get("dirty") else "")
     day = str(info.get("built", ""))[:10].replace("-", "") or "undated"
+    if lay.mac:
+        return _zip_mac_app(lay, f"smtracker-{commit}-{day}-macos-{bundle_arch(lay.root)}")
     # the shipped build is THE build (one build, ruled 26 Nov 2026 evening): smtracker-<commit>-<date>.zip; only a
     # developer's Normal build ends its name with the variant, ...-normal.zip
     variant = info.get("variant", DEFAULT_VARIANT)
     base = dist_dir.parent / f"smtracker-{commit}-{day}{'' if variant == 'lite' else '-' + variant}"
     archive = Path(shutil.make_archive(str(base), "zip", root_dir=dist_dir.parent,
                                        base_dir=dist_dir.name))
+    print(f"  {archive.stat().st_size / 1e6:.0f} MB")
+    return archive
+
+
+def _zip_mac_app(lay: Layout, stem: str) -> Path:
+    """The Mac zip: a folder "SMTracker" holding SMTracker.app and, visible beside it, the licence, the notices, the
+    README and the source zip (the copies inside Contents/Resources stay). Made with ditto, which keeps the app's
+    links, modes and signatures (a plain zip breaks the frameworks' links)."""
+    staging = lay.root.parent / "zip-staging"
+    if staging.exists():
+        shutil.rmtree(staging)
+    folder = staging / "SMTracker"
+    folder.mkdir(parents=True)
+    subprocess.run(["ditto", str(lay.root), str(folder / MAC_APP)], check=True)
+    for name in (LICENSE_NAME, NOTICES_NAME, README_NAME):
+        shutil.copyfile(lay.legal / name, folder / name)
+    shutil.copytree(lay.legal / SOURCE_DIR, folder / SOURCE_DIR)
+    archive = lay.root.parent / f"{stem}.zip"
+    if archive.exists():
+        archive.unlink()
+    subprocess.run(["ditto", "-c", "-k", "--keepParent", str(folder), str(archive)], check=True)
+    shutil.rmtree(staging)
     print(f"  {archive.stat().st_size / 1e6:.0f} MB")
     return archive
 
