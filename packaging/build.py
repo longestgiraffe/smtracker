@@ -143,14 +143,18 @@ NORMAL_EXCLUDES = ("cellpose.gui", "cellpose.cli")
 #: out (found 26 Nov 2026 by running the frozen app with a pack: torchvision's first line is ``from modulefinder import
 #: Module``). The list is every stdlib module the pack's wheels import at module level on Windows that the bundle lacked
 #: (scanned from the unpacked pack against the bundle's PYZ). Pack code is outside the bundle, so only a build can add them.
-PACK_STDLIB = ("modulefinder", "struct", "html.parser")
+#: ``pickletools`` added 27 Nov 2026 for the Mac: torch imports it at module level, and the Windows bundle carried it only
+#: because something Windows-only pulls it in, so on a Mac ``import torch`` failed and the pack was installed but unused.
+PACK_STDLIB = ("modulefinder", "struct", "html.parser", "pickletools")
 
 #: THE OTHER HALF OF THE SAME FINDING: a package the bundle holds PARTLY (only the modules the program imports) and the
 #: pack's code needs more of. The bundle's copy wins (that is the design), so a module it lacks is simply not found:
 #: torchvision's ``from PIL import ImageEnhance`` failed against a bundled PIL without it. Whole packages for the small
 #: ones; single modules where the package is big (found by scanning the unpacked pack's imports against the bundle's PYZ).
 PACK_COLLECT = ("PIL",)
-PACK_MODULES = ("PIL.ImageEnhance",)
+#: ``numpy.core.multiarray`` (27 Nov 2026, the Mac): OpenCV's ``cv2`` imports numpy 1's name, which numpy 2 keeps as a
+#: shim the bundle otherwise lacks on a Mac.
+PACK_MODULES = ("PIL.ImageEnhance", "numpy.core.multiarray")
 
 
 def excludes(variant: str = DEFAULT_VARIANT) -> list:
@@ -971,6 +975,18 @@ def verify_mac_app(lay: Layout, check, macos_target=None) -> None:
               if too_new else "")
 
 
+def _installed_pack():
+    """The folder of the segmentation pack remembered for this user when it is sound, else None: the frozen app puts
+    that pack on its path at start (`segpack.activate_remembered`), so verify must expect torch from it."""
+    from smtracker import segpack
+
+    pack = segpack.remembered_pack()
+    if pack is None:
+        return None
+    folder = Path(pack["folder"])
+    return folder if segpack.status(folder).ok else None
+
+
 def verify(dist_dir=None, project=None, condition=None, prep_folder=None, variant=None,
            segment_image=None, macos_target=None) -> int:
     """Check the frozen bundle. Returns 0 when every check passes.
@@ -1127,7 +1143,16 @@ def verify(dist_dir=None, project=None, condition=None, prep_folder=None, varian
     said = [line.strip() for line in (out or "").splitlines()]
     engines = next((l for l in said if l.startswith("segmentation engines:")), "")
     torch_line = next((l for l in said if l.startswith("torch:")), "")
-    if variant == "lite":
+    if variant == "lite" and _installed_pack() is not None:
+        # A SEGMENTATION PACK IS INSTALLED for this user (27 Nov 2026): the frozen app activates it at start, so the
+        # check becomes the one that matters to a lab member, that the pack's torch and Cellpose import INSIDE this
+        # bundle. (That torch is not bundled is checked above, from the bundle's files.) The Mac build failed exactly
+        # this, silently, for want of two modules the Windows bundle happened to carry (`PACK_STDLIB`, `PACK_MODULES`).
+        check(f"--segment-check: the installed segmentation pack ({_installed_pack()}) imports in the frozen app",
+              code == 0 and engines == "segmentation engines: classical, cellpose"
+              and torch_line.startswith("torch: ") and "not part of" not in torch_line
+              and "will not import" not in torch_line, torch_line or f"exit {code}")
+    elif variant == "lite":
         check("--segment-check: the Lite build has the classical segmenter and no torch",
               code == 0 and engines == "segmentation engines: classical"
               and torch_line == "torch: not part of this build (the classical segmenter only)", f"exit {code}")
