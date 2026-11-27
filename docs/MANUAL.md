@@ -1,6 +1,6 @@
 # SMTracker 3 user manual
 
-This is the manual on the SMTracker website, https://longestgiraffe.github.io/smtracker-site/docs, copied into the program so that **Help** works without a network. The website may be newer. From the website, 27 Nov 2026 (version a15726f), copied by `scripts/manual_from_site.py`.
+This is the manual on the SMTracker website, https://longestgiraffe.github.io/smtracker-site/docs, copied into the program so that **Help** works without a network. The website may be newer. From the website, 27 Nov 2026 (version 1304a80), copied by `scripts/manual_from_site.py`.
 
 ## 1. Get started
 
@@ -41,7 +41,7 @@ The three stage windows share the same three controls. The first window, where y
 
 | Control | What it does |
 | --- | --- |
-| **Help** | Offers the manual on the website or the copy that came with SMTracker (no network needed), at the chapter for the stage you're in |
+| **Help** | Offers the manual on the website or the copy that came with SMTracker (no network needed), at the chapter for the stage you're in, and **Check for updates** |
 | **Options** | Sets the *standards*: the values a new condition starts from |
 | **Back to menu** | Returns to the first window |
 
@@ -70,7 +70,7 @@ Each stage has its own chapter:
 
 *Get SMTracker running on Windows or macOS, check that it works, and connect Fiji or MATLAB for tracking.*
 
-SMTracker runs on Windows and macOS. It comes as a ready-to-run folder: there's no installer, and you don't need Python. The only extra programs you need are the ones for tracking, Fiji or MATLAB.
+SMTracker runs on Windows and macOS, and you don't need Python. On Windows it comes with an installer, and a zip of the same program is there for computers where nothing may be installed. The only extra programs you need are the ones for tracking, Fiji or MATLAB.
 
 > **On Linux?** There's no packaged version for Linux yet. Run SMTracker from its source code instead: see [Run from source](#run-from-source) at the end of this page.
 
@@ -88,27 +88,33 @@ SMTracker runs on Windows and macOS. It comes as a ready-to-run folder: there's 
 
 #### Get SMTracker running
 
-SMTracker comes as a zip with everything inside, so getting it running takes three steps.
+Download it from the [newest release](https://github.com/longestgiraffe/smtracker/releases/latest) on GitHub.
 
 **Windows**
 
-##### Unzip it to a short path
+##### Run the installer
 
-Unzip the SMTracker folder to a short path on your own disk, for example `C:\SMTracker`.
+Download `SMTracker-<version>-<build>-setup.exe` from the release and double-click it. Windows may first show **Windows protected your PC**: SMTracker isn't signed with a paid certificate, so Windows doesn't recognize it yet. Click **More info**, then **Run anyway**.
 
-Windows limits a file's full path to 260 characters, and the longest file inside SMTracker already uses about 140 of them. Deep folders such as `C:\Users\you\Downloads\lab\software\…` can push it over the limit, and the app then fails to start.
+The installer needs no administrator rights: it installs SMTracker for you alone, in `%LOCALAPPDATA%\Programs\SMTracker`.
+
+##### Choose what else to get
+
+After the license, the installer offers three things, none of them ticked: a desktop shortcut, the [segmentation pack](#automatic-cell-outlines) for Cellpose-SAM (downloaded in a window that stays open until you close it), and Fiji's download page, for tracking with TrackMate. You can get both of the last two later as well.
 
 ##### Start it
 
-Open the folder and double-click `smtracker.exe`. It opens SMTracker's window and no console. To watch SMTracker's messages as it works, double-click `smtracker-console.exe` instead: the same program, with a console window beside it. Closing that console closes SMTracker.
-
-The first time, Windows may show **Windows protected your PC**. SMTracker isn't signed with a paid certificate, so Windows doesn't recognize it yet. Click **More info**, then **Run anyway**. You only need to do this once.
+Start SMTracker from the installer's last page or from the Start menu. **SMTracker (with console)** in the Start menu opens the same program with a console window beside it that shows its messages. Closing that console closes SMTracker.
 
 ##### Check that it opened
 
 The first window asks **Where would you like to start?** When you see it, SMTracker is running. To go on, follow [Your first project](#your-first-project).
 
+> **Where nothing may be installed** The release also has a zip of the same program. Unzip it to a short path on your own disk, for example `C:\SMTracker`: Windows limits a file's full path to 260 characters, and the longest file inside uses about 140 of them. Then double-click `smtracker.exe`, or `smtracker-console.exe` to see its messages.
+
 **macOS**
+
+> **No macOS package yet** There's no published macOS package yet. Until there is, [run SMTracker from source](#run-from-source), or build a disk image on the Mac from the source with `python packaging/build.py --installer`. The steps below are for a packaged copy.
 
 ##### Unzip it
 
@@ -128,7 +134,7 @@ The first window asks **Where would you like to start?** When you see it, SMTrac
 
 ##### Where SMTracker keeps its files
 
-Nothing gets installed into the system. SMTracker keeps:
+The installer puts the program in `%LOCALAPPDATA%\Programs\SMTracker`; a zip copy is wherever you unzipped it. Besides the program, SMTracker keeps:
 
 | What | Windows | macOS |
 | --- | --- | --- |
@@ -136,11 +142,11 @@ Nothing gets installed into the system. SMTracker keeps:
 | Caches, so projects reopen quickly, and the list of recent projects | `%LOCALAPPDATA%\smtracker` | `~/Library/Caches/smtracker` |
 | Everything it makes for a project: ranges, projections, tracks, outlines, groupings and caches | In each condition folder, beside your data ([What SMTracker writes](#what-smtracker-writes)) | The same |
 
-To remove SMTracker, delete its folder. To also remove your settings and caches, delete the two folders in the table. Deleting the caches also clears the list of recent projects.
+To remove SMTracker, uninstall it in Windows' **Installed apps**, or delete the folder of a zip copy. The uninstaller leaves your settings, caches and a downloaded segmentation pack: remove the pack first with **Segmentation pack** in the outlines window, then delete the two folders in the table. Deleting the caches also clears the list of recent projects.
 
 ##### If something seems wrong
 
-The first window has **Report a problem…** at the bottom left. It packs the log, the version and your system details into one zip that you can send to whoever maintains SMTracker in your lab.
+The first window has **Report a problem…** at the bottom left. It packs the log, the version and your system details into one zip. **Report on GitHub** then opens a new public report on SMTracker's GitHub page with the version and the end of the log filled in: read it, delete any folder names you'd rather not show, drag the zip in, and submit it with your GitHub account. Nothing is sent until you do. You can also send the zip to whoever maintains SMTracker in your lab.
 
 You can also run a quick self-test:
 
@@ -150,7 +156,7 @@ On Windows, click **Start**, type `cmd` and press `Enter`. On a Mac, open **Term
 
 ##### Run the self-test
 
-Go to the SMTracker folder: type `cd C:\SMTracker` on Windows or `cd ~/SMTracker` on a Mac, and press `Enter`. Then type `smtracker-console.exe --selftest` on Windows or `./smtracker --selftest` on a Mac, and press `Enter`. The output ends with `analysis self-test: OK` when all is well.
+Go to the SMTracker folder: type `cd %LOCALAPPDATA%\Programs\SMTracker` on Windows (or the folder of a zip copy) or `cd ~/SMTracker` on a Mac, and press `Enter`. Then type `smtracker-console.exe --selftest` on Windows or `./smtracker --selftest` on a Mac, and press `Enter`. The output ends with `analysis self-test: OK` when all is well.
 
 #### Connect a tracker
 
@@ -196,11 +202,13 @@ The Omnipose models run only when you run SMTracker from source with Omnipose in
 
 #### Update SMTracker
 
-Unzip the new version into a new folder, for example `C:\SMTracker-new` or `~/SMTracker-new`, and start it from there. Your settings live outside the program folder (`%APPDATA%\SMTracker` on Windows, `~/.config/smtracker` on a Mac), so the new version finds them. Once it runs well, delete the old folder.
+SMTracker looks for a newer release once a day when it starts, and shows it on the first window. **Download and install** downloads the installer, checks it against the release's checksums, closes SMTracker and updates it in place; your settings and the segmentation pack stay. Nothing is installed until you click it. On a Mac it opens the release page instead. **Help** › **Check for updates** looks at once, and **Check for updates at start** in Options turns the daily look off.
+
+With a zip copy, unzip the new version into a new folder, for example `C:\SMTracker-new` or `~/SMTracker-new`, and start it from there. Your settings live outside the program folder (`%APPDATA%\SMTracker` on Windows, `~/.config/smtracker` on a Mac), so the new version finds them. Once it runs well, delete the old folder.
 
 #### Run from source
 
-On Linux, or to use the Omnipose models, run SMTracker from its source code. You need Python 3.10 or newer and the SMTracker source: every packaged copy has it as a zip in its `source` folder. Unzip it, open a terminal in the unzipped folder, and run:
+On Linux, or to use the Omnipose models, run SMTracker from its source code. You need Python 3.10 or newer and the SMTracker source: clone it from [GitHub](https://github.com/longestgiraffe/smtracker) with `git clone https://github.com/longestgiraffe/smtracker`, or unzip the copy in a packaged SMTracker's `source` folder. Open a terminal in the source folder, and run:
 
 `Terminal (macOS or Linux)`:
 
@@ -2149,7 +2157,7 @@ The right rail holds the tools that act on the page on screen. From the top:
 | **Significance** | Chooses which conditions are compared, the test, and the brackets on the chart ([Figures](#figures)). Shown only on SQD's and Apparent Diffusion's *Populations* and on HMM's *Slow state*. |
 | **Conditions** | Their colors and order, in every section ([below](#the-order-and-colors-of-the-conditions)). |
 | **Metadata** | The settings and replicates of the result on screen, with **Copy**. SQD and the Spatial Map print it; the other sections don't yet. |
-| **Help** | Offers the manual on the website or the copy that came with SMTracker (no network needed), both in your browser at the Analysis chapter. The two hold the same text. |
+| **Help** | Offers the manual on the website or the copy that came with SMTracker (no network needed), both in your browser at the Analysis chapter. The two hold the same text. Also **Check for updates**. |
 | **SMTracker 2.0 view** | The clock icon. Opens SMTracker 2.0's tabs on these conditions, in a window of their own ([SMTracker 2.0 view](#smtracker-2-0-view)). |
 | **Options** | Opens [Analysis options](#analysis-options). |
 | **Theme** | Switches between light and dark. |
@@ -3227,9 +3235,9 @@ Every refusal names what is missing, in the window that refuses. The wording in 
 
 #### SMTracker 3.0.0
 
-*Release date to follow.*
+*Released 27 November 2026.* [Download](https://github.com/longestgiraffe/smtracker/releases/tag/v3.0.0)
 
-SMTracker 3 is a new program, written in Python. It no longer needs MATLAB, and it comes as a ready-to-run app for Windows and macOS ([Install and open SMTracker](#install-and-open-smtracker)).
+SMTracker 3 is a new program, written in Python. It no longer needs MATLAB, and it comes with an installer for Windows; a macOS package is to follow ([Install and open SMTracker](#install-and-open-smtracker)).
 
 - **From raw movies to tracks.** Crops Nikon `.nd2`, MetaMorph `.stk` and TIFF movies to their usable frames, saves the calibration, and runs TrackMate (Fiji) or u-track (MATLAB) for one condition or many folders overnight ([Image preparation + Tracking](#2-image-preparation-and-tracking)).
 - **Cell outlines.** Finds cells with a classical segmenter or, after an optional download of PyTorch and Cellpose, with Cellpose-SAM; corrects them in an outline editor; and trains your own model ([Cell outlines](#3-cell-outlines)).
@@ -3241,6 +3249,8 @@ SMTracker 3 is a new program, written in Python. It no longer needs MATLAB, and 
 - **Simulated data.** Builds data sets with known populations, diffusion and switching, to compare SMTracker's results with the truth.
 - **Figures for print**, each with its source data as `.xlsx` and `.csv` ([Figures](#figures)).
 - **SMTracker 2.0 view.** SMTracker 2.0's eight tabs, computed its way, on the conditions you have loaded ([SMTracker 2.0 view](#smtracker-2-0-view)).
+- **Installer and updates.** Installs without administrator rights, offers the segmentation pack and Fiji, and looks once a day for a newer release, which it installs only when you click ([Update SMTracker](#install-and-open-smtracker)).
+- **Report on GitHub.** Report a problem saves the log as a zip and opens a new report on GitHub with the version and the end of the log filled in; nothing is sent until you submit it.
 - **Fixes to SMTracker 2.0:** fraction error bars assigned to the wrong condition, a crash with one population, a limit of seven conditions, and fits that failed without saying so.
 
 #### SMTracker 2.0
